@@ -9,12 +9,92 @@ from datetime import datetime
 SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
+# 📝 확장된 37개 갤러리 리스트
 TARGET_GALLERIES = [
-    {"name": "학점은행제갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=acbs", "mo": "https://m.dcinside.com/board/acbs"},
-    {"name": "토익갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=toeic", "mo": "https://m.dcinside.com/board/toeic"},
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
-    {"name": "편입갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=admission", "mo": "https://m.dcinside.com/board/admission"}
+    {"name": "7급공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=7th", "mo": "https://m.dcinside.com/board/7th"},
+    {"name": "HSK갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=hsk123456", "mo": "https://m.dcinside.com/board/hsk123456"},
+    {"name": "JLPT갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=jlpt", "mo": "https://m.dcinside.com/board/jlpt"},
+    {"name": "고시시험갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=exam_new", "mo": "https://m.dcinside.com/board/exam_new"},
+    {"name": "공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=government", "mo": "https://m.dcinside.com/board/government"},
+    {"name": "공인중개사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=lreaexam", "mo": "https://m.dcinside.com/board/lreaexam"},
+    {"name": "군무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=soider", "mo": "https://m.dcinside.com/board/soider"},
+    {"name": "대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=univ_new", "mo": "https://m.dcinside.com/board/univ_new"},
+    {"name": "듀오링고갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=duolingo", "mo": "https://m.dcinside.com/board/duolingo"},
+    {"name": "러시아어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=russiangall", "mo": "https://m.dcinside.com/board/russiangall"},
+    {"name": "마이스터고갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=meister", "mo": "https://m.dcinside.com/board/meister"},
+    {"name": "법학전문대학원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=lawschool", "mo": "https://m.dcinside.com/board/lawschool"},
+    {"name": "세무사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cta", "mo": "https://m.dcinside.com/board/cta"},
+    {"name": "소방갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=fire", "mo": "https://m.dcinside.com/board/fire"},
+    {"name": "순경갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=policeofficer", "mo": "https://m.dcinside.com/board/policeofficer"},
+    {"name": "어학연수갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=language", "mo": "https://m.dcinside.com/board/language"},
+    {"name": "영어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=English", "mo": "https://m.dcinside.com/board/English"},
+    {"name": "영어회화갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=englishspeech", "mo": "https://m.dcinside.com/board/englishspeech"},
+    {"name": "오픽갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=opic", "mo": "https://m.dcinside.com/board/opic"},
+    {"name": "유학시험갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=eju", "mo": "https://m.dcinside.com/board/eju"},
+    {"name": "일어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=japanese", "mo": "https://m.dcinside.com/board/japanese"},
+    {"name": "임용고시갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=imyoung", "mo": "https://m.dcinside.com/board/imyoung"},
+    {"name": "자격증갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=coq", "mo": "https://m.dcinside.com/board/coq"},
+    {"name": "전산세무회계갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=accounting", "mo": "https://m.dcinside.com/board/accounting"},
+    {"name": "정병권갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=jeongbk", "mo": "https://m.dcinside.com/board/jeongbk"},
+    {"name": "중국어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=chinese", "mo": "https://m.dcinside.com/board/chinese"},
+    {"name": "지텔프갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=gtelf", "mo": "https://m.dcinside.com/board/gtelf"},
+    {"name": "컴퓨터활용능력갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=itlicense", "mo": "https://m.dcinside.com/board/itlicense"},
+    {"name": "텝스갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=teps", "mo": "https://m.dcinside.com/board/teps"},
+    {"name": "토익갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=toeic", "mo": "https://m.dcinside.com/board/toeic"},
+    {"name": "토익스피킹갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=toespic", "mo": "https://m.dcinside.com/board/toespic"},
+    {"name": "토플갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=toefl", "mo": "https://m.dcinside.com/board/toefl"},
+    {"name": "편입갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=admission", "mo": "https://m.dcinside.com/board/admission"},
+    {"name": "학점은행제갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=acbs", "mo": "https://m.dcinside.com/board/acbs"},
+    {"name": "해양경찰갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=kcg", "mo": "https://m.dcinside.com/board/kcg"},
+    {"name": "회계사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cpa", "mo": "https://m.dcinside.com/board/cpa"}
 ]
+
+# 🎯 구글 시트 안전 업로드 함수 (동기 처리용)
+def safe_batch_upload(ws, data_chunk):
+    if not data_chunk: return
+    rows_to_append = [[d['date'], d['gallery'], d['env'], d['pos'], d['url'], d['img'], d['text']] for d in data_chunk]
+    
+    # 데이터를 30개씩 쪼개서 업로드 (API 보호)
+    for i in range(0, len(rows_to_append), 30):
+        sub_chunk = rows_to_append[i : i + 30]
+        try:
+            ws.append_rows(sub_chunk)
+            time.sleep(1.5) # 꿀맛 휴식 (API 에러 원천 차단)
+        except Exception as e:
+            print(f"\n⚠️ 구글 시트 업로드 중 에러 발생: {e}")
+            time.sleep(5) # 에러 시 5초 대기 후 다음 작업 진행
+
+# 🎯 250개 도달 시 업로드를 담당하는 백그라운드 워커 (Consumer)
+async def uploader_worker(queue, ws):
+    buffer = []
+    total_uploaded = 0
+    print("\n📦 [시스템] 백그라운드 업로드 매니저 가동 완료 (250개 단위 대기 중...)")
+    
+    while True:
+        item = await queue.get()
+        if item is None: # None이 들어오면 모든 탐색이 끝났다는 신호
+            break
+            
+        buffer.append(item)
+        
+        # 바구니에 250개가 차면 즉시 업로드 실시!
+        if len(buffer) >= 250:
+            print(f"\n🚀 [시스템] 데이터 250개 도달! 구글 시트 중간 업로드를 시작합니다 (30개씩 분할)...")
+            await asyncio.to_thread(safe_batch_upload, ws, buffer)
+            total_uploaded += len(buffer)
+            print(f"✅ [시스템] 중간 업로드 완료. (누적 업로드: {total_uploaded}건)")
+            buffer.clear()
+            
+        queue.task_done()
+        
+    # 탐색 종료 후 바구니에 남은 잔여 데이터(250개 미만) 최종 업로드
+    if buffer:
+        print(f"\n🚀 [시스템] 탐색 완전 종료. 남은 자투리 데이터 {len(buffer)}건을 최종 업로드합니다...")
+        await asyncio.to_thread(safe_batch_upload, ws, buffer)
+        total_uploaded += len(buffer)
+        
+    print(f"\n🎉 [시스템] 모든 구글 시트 업로드 작업이 안전하게 종료되었습니다. (총 {total_uploaded}건)")
 
 def get_korean_position(env, page_type, raw_pos, img_src):
     raw = str(raw_pos).lower()
@@ -92,13 +172,11 @@ async def capture_all_visible_ads(context, page, env, gallery_name, page_type):
                     raw_pos = await ad.evaluate("node => { let p = node.closest('div'); return p ? p.className : 'unknown'; }")
                     text_content = await ad.inner_text() or ""
                     
-                    # 🚫 1차: 구글/네트워크 및 닫기 버튼 차단
                     if "google" in href.lower() or "adsrvr.org" in href.lower() or "criteo" in href.lower(): continue
                     if "googleactiveview" in str(raw_pos).lower(): continue
                     if "dc/w/images" in img_src or "info_polic" in href or "close" in img_src.lower(): continue
                     if href == "#" or "javascript" in href.lower() or not href: continue
                         
-                    # 🚫 2차 (핵심): 이용약관, 정책, 갤러리 안내 등 텍스트/URL 원천 차단
                     if "nstatic.dcinside.com/dc/" in href or "policy" in href or "useinfo" in href or "dcad" in href: continue
                     if any(word in text_content for word in ["이용안내", "이용약관", "개인정보", "청소년보호", "광고안내"]): continue
 
@@ -128,31 +206,65 @@ async def capture_all_visible_ads(context, page, env, gallery_name, page_type):
             
     return collected
 
-async def run_scraper_task(sem, context, env, target):
+# ⚡ 데이터를 수집하자마자 큐(Queue) 바구니에 집어넣는 역할
+async def run_scraper_task(sem, context, env, target, data_queue):
     async with sem:
-        await asyncio.sleep(random.uniform(0, 1.5)) 
+        await asyncio.sleep(random.uniform(0, 2.0)) 
         page = await context.new_page()
         await page.route("**/*", block_unnecessary_resources)
-        data = []
+        
         try:
             url = target['pc'] if env == "PC" else target['mo']
             await page.goto(url, wait_until="domcontentloaded", timeout=15000)
-            data.extend(await capture_all_visible_ads(context, page, env, target['name'], "리스트"))
             
+            # 리스트 페이지 데이터 수집 및 큐에 전송
+            list_data = await capture_all_visible_ads(context, page, env, target['name'], "리스트")
+            for item in list_data:
+                await data_queue.put(item)
+            
+            # 본문 페이지 이동
             post = page.locator("tr.us-post:not(.notice) td.gall_tit > a:not(.reply_numbox)").first if env == "PC" else page.locator("ul.gall-detail-lst li:not(.notice) .gall-detail-lnktit a").first
             if await post.count() > 0:
                 await post.click()
                 await asyncio.sleep(1.5)
-                data.extend(await capture_all_visible_ads(context, page, env, target['name'], "본문"))
+                
+                # 본문 페이지 데이터 수집 및 큐에 전송
+                body_data = await capture_all_visible_ads(context, page, env, target['name'], "본문")
+                for item in body_data:
+                    await data_queue.put(item)
         except: pass
         finally: await page.close()
-        return data
 
 async def main():
     print("==================================================")
-    print("🚀 디시인사이드 광고 초고속 병렬 수집 (쓰레기 배너 차단 완료)")
+    print("🚀 [대규모 37개 갤러리] 초고속 병렬 수집 & 실시간 분할 업로드 가동")
     print("==================================================")
     
+    # 🧹 1단계: 시트 사전 청소 (과거 데이터 보존, 오늘 데이터만 초기화)
+    print("\n🧹 구글 시트 사전 초기화 중 (오늘 중복 데이터 방지)...")
+    gc = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
+    ws = gc.open_by_url(SHEET_URL).get_worksheet(0)
+    
+    existing_rows = ws.get_all_values()
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    headers = ["날짜", "갤러리명", "환경", "위치", "URL", "이미지", "텍스트문구"]
+    kept_rows = [headers]
+    
+    if existing_rows:
+        for row in existing_rows[1:]:
+            if len(row) > 0 and row[0] != today_str: 
+                kept_rows.append(row)
+                
+    ws.clear()
+    
+    # 남겨진 과거 데이터가 있다면 100개씩 쪼개서 복구 (API 보호)
+    if len(kept_rows) > 1:
+        print("   ▶️ 과거 히스토리 데이터를 안전하게 복구합니다.")
+        for i in range(0, len(kept_rows), 100):
+            ws.append_rows(kept_rows[i:i+100])
+            time.sleep(1.5)
+
+    # 🚀 2단계: 수집 및 실시간 업로드 시작
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
@@ -164,49 +276,26 @@ async def main():
         mo_context = await browser.new_context(**p.devices['iPhone 13']) 
 
         sem = asyncio.Semaphore(8)
+        data_queue = asyncio.Queue() # 실시간 데이터 바구니 생성
 
+        # 백그라운드 업로더 실행 (봇들이 일하는 동안 뒤에서 대기)
+        uploader_task = asyncio.create_task(uploader_worker(data_queue, ws))
+
+        # 37개 갤러리 (총 74개 작업) 병렬 출발
         tasks = []
         for target in TARGET_GALLERIES:
-            tasks.append(run_scraper_task(sem, pc_context, "PC", target))
-            tasks.append(run_scraper_task(sem, mo_context, "MO", target))
+            tasks.append(run_scraper_task(sem, pc_context, "PC", target, data_queue))
+            tasks.append(run_scraper_task(sem, mo_context, "MO", target, data_queue))
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # 모든 봇들의 탐색이 끝날 때까지 대기
+        await asyncio.gather(*tasks, return_exceptions=True)
         await browser.close()
         
-        all_final_data = [item for sublist in results if isinstance(sublist, list) for item in sublist]
-
-    if all_final_data:
-        print(f"\n📊 구글 시트 정리 및 분할 업로드를 준비합니다... (총 {len(all_final_data)}건)")
-        gc = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
-        ws = gc.open_by_url(SHEET_URL).get_worksheet(0)
+        # 봇 탐색 종료 ➡️ 업로더에게 종료 신호(None) 전송
+        await data_queue.put(None)
         
-        all_rows = ws.get_all_values()
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        new_sheet_data = [["날짜", "갤러리명", "환경", "위치", "URL", "이미지", "텍스트문구"]]
-        
-        if all_rows:
-            for row in all_rows[1:]:
-                if len(row) > 0 and row[0] != today_str: 
-                    new_sheet_data.append(row)
-                    
-        for d in all_final_data:
-            new_sheet_data.append([d['date'], d['gallery'], d['env'], d['pos'], d['url'], d['img'], d['text']])
-            
-        ws.clear()
-        
-        chunk_size = 30
-        total_chunks = (len(new_sheet_data) // chunk_size) + 1
-        
-        print(f"📦 데이터를 {total_chunks}개의 덩어리로 나누어 안전하게 업로드합니다.")
-        for i in range(0, len(new_sheet_data), chunk_size):
-            chunk = new_sheet_data[i : i + chunk_size]
-            ws.append_rows(chunk)
-            print(f"   ▶️ {min(i + chunk_size, len(new_sheet_data))} / {len(new_sheet_data)} 건 업로드 완료...")
-            time.sleep(1.5) 
-            
-        print("\n🎉 모든 분할 업로드 및 초고속 수집이 완벽하게 끝났습니다!")
-    else:
-        print("\n❌ 수집된 데이터가 없습니다.")
+        # 업로더가 남은 자투리 데이터를 모두 시트에 올릴 때까지 대기
+        await uploader_task
 
 if __name__ == "__main__":
     asyncio.run(main())
