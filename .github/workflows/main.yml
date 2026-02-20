@@ -3,9 +3,9 @@ name: 디시인사이드 광고 모니터링 자동화
 on:
   workflow_dispatch:
   
-  # 🔥 한국 시간 매일 오전 6시 30분 자동 실행 (UTC 기준 21:30)
+  # 🔥 한국 시간 매일 오전 5시 자동 실행 (UTC 기준 20:00)
   schedule:
-    - cron: '30 21 * * *'
+    - cron: '0 20 * * *'
 
 jobs:
   build:
