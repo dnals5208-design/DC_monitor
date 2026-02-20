@@ -38,13 +38,11 @@ def get_korean_position(env, page_type, raw_pos, img_src):
             if "bottom" in raw or "btm" in raw: return "하단배너"
             return "상단배너"
 
-# 🔗 새 창을 띄워 주소를 붙여넣고 랜딩 URL 낚아채기
 async def get_final_landing_url(context, redirect_url):
     if not redirect_url or not redirect_url.startswith("http"): return redirect_url
     if "addc.dcinside" not in redirect_url and "NetInsight" not in redirect_url: return redirect_url
     try:
         temp_page = await context.new_page()
-        # 직접 클릭하지 않고 새 창에서 URL로 바로 이동 (빠른 탈취를 위해 commit 사용)
         await temp_page.goto(redirect_url, wait_until="commit", timeout=4000)
         final_url = temp_page.url
         await temp_page.close()
@@ -52,9 +50,7 @@ async def get_final_landing_url(context, redirect_url):
     except:
         return redirect_url
 
-# ⚡ 속도 폭발의 핵심: 광고와 상관없는 찌꺼기 파일 절대 다운로드 금지
 async def block_unnecessary_resources(route):
-    # 광고 도메인이 아닌 일반 이미지, 폰트, 미디어 차단
     req_url = route.request.url
     if route.request.resource_type in ["font", "media", "stylesheet"]:
         await route.abort()
@@ -76,7 +72,7 @@ async def capture_all_visible_ads(context, page, env, gallery_name, page_type):
         attempt += 1
         found_ad_in_this_round = False
         current_round = valid_refreshes + 1
-        ad_count_in_round = 0 # 이번 새로고침에서 찾은 광고 개수
+        ad_count_in_round = 0 
         
         try:
             await page.reload(wait_until="domcontentloaded", timeout=12000)
@@ -94,12 +90,18 @@ async def capture_all_visible_ads(context, page, env, gallery_name, page_type):
                     img = ad.locator("img")
                     img_src = await img.first.evaluate("node => node.src") if await img.count() > 0 else ""
                     raw_pos = await ad.evaluate("node => { let p = node.closest('div'); return p ? p.className : 'unknown'; }")
+                    text_content = await ad.inner_text() or ""
                     
+                    # 🚫 1차: 구글/네트워크 및 닫기 버튼 차단
                     if "google" in href.lower() or "adsrvr.org" in href.lower() or "criteo" in href.lower(): continue
                     if "googleactiveview" in str(raw_pos).lower(): continue
                     if "dc/w/images" in img_src or "info_polic" in href or "close" in img_src.lower(): continue
                     if href == "#" or "javascript" in href.lower() or not href: continue
                         
+                    # 🚫 2차 (핵심): 이용약관, 정책, 갤러리 안내 등 텍스트/URL 원천 차단
+                    if "nstatic.dcinside.com/dc/" in href or "policy" in href or "useinfo" in href or "dcad" in href: continue
+                    if any(word in text_content for word in ["이용안내", "이용약관", "개인정보", "청소년보호", "광고안내"]): continue
+
                     is_ad = any(k in href or k in (img_src or "") for k in ["addc.dcinside", "NetInsight", "nstatic.dcinside", "toast.com"])
                     
                     if is_ad:
@@ -110,10 +112,9 @@ async def capture_all_visible_ads(context, page, env, gallery_name, page_type):
                             seen_keys.add(key)
                             ad_count_in_round += 1
                             final_url = await get_final_landing_url(context, href)
-                            text_val = (await img.first.get_attribute("alt") if img_src else await ad.inner_text()) or "이미지 배너"
+                            text_val = (await img.first.get_attribute("alt") if img_src else text_content) or "이미지 배너"
                             korean_pos = get_korean_position(env, page_type, raw_pos, img_src)
                             
-                            # 로그 직관성 개선: [몇 번째 새로고침] - [몇 번째 배너]
                             print(f"✅ {prefix} [{current_round}회차 새로고침 - {ad_count_in_round}번째 발견] {korean_pos}")
                             
                             collected.append({
@@ -129,7 +130,6 @@ async def capture_all_visible_ads(context, page, env, gallery_name, page_type):
 
 async def run_scraper_task(sem, context, env, target):
     async with sem:
-        # 봇 차단 방지용 약간의 출발 딜레이
         await asyncio.sleep(random.uniform(0, 1.5)) 
         page = await context.new_page()
         await page.route("**/*", block_unnecessary_resources)
@@ -150,7 +150,7 @@ async def run_scraper_task(sem, context, env, target):
 
 async def main():
     print("==================================================")
-    print("🚀 디시인사이드 광고 초고속 병렬 수집 (구글 API 분할 업로드 적용)")
+    print("🚀 디시인사이드 광고 초고속 병렬 수집 (쓰레기 배너 차단 완료)")
     print("==================================================")
     
     async with async_playwright() as p:
@@ -163,7 +163,6 @@ async def main():
         pc_context = await browser.new_context(viewport={"width": 1920, "height": 1080}, user_agent=ua)
         mo_context = await browser.new_context(**p.devices['iPhone 13']) 
 
-        # 🔥 8개 환경(PC 4개, MO 4개)을 한 번에 모두 동시에 출발시킵니다. (속도 극대화)
         sem = asyncio.Semaphore(8)
 
         tasks = []
@@ -176,7 +175,6 @@ async def main():
         
         all_final_data = [item for sublist in results if isinstance(sublist, list) for item in sublist]
 
-    # 📊 구글 시트 30개 분할 업로드 (API 쿼터 에러 완벽 차단)
     if all_final_data:
         print(f"\n📊 구글 시트 정리 및 분할 업로드를 준비합니다... (총 {len(all_final_data)}건)")
         gc = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
@@ -194,10 +192,8 @@ async def main():
         for d in all_final_data:
             new_sheet_data.append([d['date'], d['gallery'], d['env'], d['pos'], d['url'], d['img'], d['text']])
             
-        # 기존 내용 한 번에 싹 지우기
         ws.clear()
         
-        # 🔥 데이터를 30개씩 쪼개서 업로드
         chunk_size = 30
         total_chunks = (len(new_sheet_data) // chunk_size) + 1
         
@@ -205,8 +201,8 @@ async def main():
         for i in range(0, len(new_sheet_data), chunk_size):
             chunk = new_sheet_data[i : i + chunk_size]
             ws.append_rows(chunk)
-            print(f"   ▶️ {i + len(chunk)} / {len(new_sheet_data)} 건 업로드 완료...")
-            time.sleep(1.5) # 구글 API 쓰기 제한(Rate Limit) 방지용 꿀맛 휴식
+            print(f"   ▶️ {min(i + chunk_size, len(new_sheet_data))} / {len(new_sheet_data)} 건 업로드 완료...")
+            time.sleep(1.5) 
             
         print("\n🎉 모든 분할 업로드 및 초고속 수집이 완벽하게 끝났습니다!")
     else:
