@@ -9,48 +9,51 @@ from datetime import datetime
 SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
-# 🔥 정병권 갤러리 ID(jeongbyeongkwon) 및 마이너 주소 직접 반영 완료!
+# 🔥 37개 갤러리 전수조사 완료 (정규/마이너 주소 및 정확한 ID 완벽 매핑)
 ALL_GALLERIES = [
+    # --- 🏢 정규 갤러리 (PC: /board/, MO: /board/) ---
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
     {"name": "7급공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=7th", "mo": "https://m.dcinside.com/board/7th"},
-    {"name": "HSK갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=hsk123456", "mo": "https://m.dcinside.com/board/hsk123456"},
-    {"name": "JLPT갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=jlpt", "mo": "https://m.dcinside.com/board/jlpt"},
     {"name": "고시시험갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=exam_new", "mo": "https://m.dcinside.com/board/exam_new"},
     {"name": "공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=government", "mo": "https://m.dcinside.com/board/government"},
-    {"name": "공인중개사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=lreaexam", "mo": "https://m.dcinside.com/board/lreaexam"},
-    {"name": "군무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=soider", "mo": "https://m.dcinside.com/board/soider"},
     {"name": "대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=univ_new", "mo": "https://m.dcinside.com/board/univ_new"},
-    {"name": "듀오링고갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=duolingo", "mo": "https://m.dcinside.com/board/duolingo"},
-    {"name": "러시아어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=russiangall", "mo": "https://m.dcinside.com/board/russiangall"},
-    {"name": "마이스터고갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=meister", "mo": "https://m.dcinside.com/board/meister"},
     {"name": "법학전문대학원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=lawschool", "mo": "https://m.dcinside.com/board/lawschool"},
     {"name": "세무사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cta", "mo": "https://m.dcinside.com/board/cta"},
     {"name": "소방갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=fire", "mo": "https://m.dcinside.com/board/fire"},
     {"name": "순경갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=policeofficer", "mo": "https://m.dcinside.com/board/policeofficer"},
     {"name": "어학연수갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=language", "mo": "https://m.dcinside.com/board/language"},
     {"name": "영어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=English", "mo": "https://m.dcinside.com/board/English"},
-    {"name": "영어회화갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=englishspeech", "mo": "https://m.dcinside.com/board/englishspeech"},
-    {"name": "오픽갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=opic", "mo": "https://m.dcinside.com/board/opic"},
-    {"name": "유학시험갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=eju", "mo": "https://m.dcinside.com/board/eju"},
     {"name": "일어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=japanese", "mo": "https://m.dcinside.com/board/japanese"},
     {"name": "임용고시갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=imyoung", "mo": "https://m.dcinside.com/board/imyoung"},
     {"name": "자격증갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=coq", "mo": "https://m.dcinside.com/board/coq"},
-    {"name": "전산세무회계갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=accounting", "mo": "https://m.dcinside.com/board/accounting"},
-    {"name": "정병권갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=jeongbyeongkwon", "mo": "https://m.dcinside.com/board/jeongbyeongkwon"},
     {"name": "중국어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=chinese", "mo": "https://m.dcinside.com/board/chinese"},
-    {"name": "지텔프갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=gtelf", "mo": "https://m.dcinside.com/board/gtelf"},
-    {"name": "컴퓨터활용능력갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=itlicense", "mo": "https://m.dcinside.com/board/itlicense"},
-    {"name": "텝스갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=teps", "mo": "https://m.dcinside.com/board/teps"},
     {"name": "토익갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=toeic", "mo": "https://m.dcinside.com/board/toeic"},
-    {"name": "토익스피킹갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=toespic", "mo": "https://m.dcinside.com/board/toespic"},
     {"name": "토플갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=toefl", "mo": "https://m.dcinside.com/board/toefl"},
     {"name": "편입갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=admission", "mo": "https://m.dcinside.com/board/admission"},
     {"name": "학점은행제갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=acbs", "mo": "https://m.dcinside.com/board/acbs"},
     {"name": "해양경찰갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=kcg", "mo": "https://m.dcinside.com/board/kcg"},
-    {"name": "회계사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cpa", "mo": "https://m.dcinside.com/board/cpa"}
+    {"name": "회계사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cpa", "mo": "https://m.dcinside.com/board/cpa"},
+
+    # --- ⛺ 마이너 갤러리 (PC: /mgallery/board/, MO: /board/) ---
+    {"name": "HSK갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=hsk123456", "mo": "https://m.dcinside.com/board/hsk123456"},
+    {"name": "JLPT갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=jlpt", "mo": "https://m.dcinside.com/board/jlpt"},
+    {"name": "공인중개사갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=bokdukbang", "mo": "https://m.dcinside.com/board/bokdukbang"},
+    {"name": "군무원갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=soider", "mo": "https://m.dcinside.com/board/soider"},
+    {"name": "듀오링고갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=duolingo", "mo": "https://m.dcinside.com/board/duolingo"},
+    {"name": "러시아어갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=russiangall", "mo": "https://m.dcinside.com/board/russiangall"},
+    {"name": "마이스터고갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=meister", "mo": "https://m.dcinside.com/board/meister"},
+    {"name": "영어회화갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=englishspeech", "mo": "https://m.dcinside.com/board/englishspeech"},
+    {"name": "오픽갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=opic", "mo": "https://m.dcinside.com/board/opic"},
+    {"name": "유학시험갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=eju", "mo": "https://m.dcinside.com/board/eju"},
+    {"name": "전산세무회계갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=accounting", "mo": "https://m.dcinside.com/board/accounting"},
+    {"name": "정병권갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=jeongbyeongkwon", "mo": "https://m.dcinside.com/board/jeongbyeongkwon"},
+    {"name": "지텔프갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=gtelp", "mo": "https://m.dcinside.com/board/gtelp"},
+    {"name": "컴퓨터활용능력갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=cbt", "mo": "https://m.dcinside.com/board/cbt"},
+    {"name": "텝스갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=tepstopia", "mo": "https://m.dcinside.com/board/tepstopia"},
+    {"name": "토익스피킹갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=toeicspeaking", "mo": "https://m.dcinside.com/board/toeicspeaking"}
 ]
 
-# 10대 서버 분배식 유지
+# 🚀 10대 서버 분할 수집 로직
 CHUNK_INDEX = int(os.getenv("CHUNK_INDEX", 0))
 TOTAL_CHUNKS = int(os.getenv("TOTAL_CHUNKS", 1))
 
@@ -150,7 +153,7 @@ async def capture_ads(context, page, env, gallery, page_type):
                     if "__click__" in clean_href or "null" in clean_href: continue
                     
                     stripped_href = clean_href.rstrip('/')
-                    if stripped_href in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m"]: continue
+                    if stripped_href in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini"]: continue
                     if any(x in clean_href for x in ["/board/dcbest", "policy", "useinfo", "gall.dcinside.com/mini"]): continue
 
                     img_src = await ad.evaluate("""n => {
@@ -183,7 +186,7 @@ async def capture_ads(context, page, env, gallery, page_type):
                     if any(j in clean_img for j in junk_images) and "/ad/" not in clean_img: continue
                     if "close" in clean_img or "googleactiveview" in str(raw_pos).lower(): continue
                     
-                    junk_texts = ["갤러리", "마이너 갤러리", "실시간 베스트", "null", "dcinside.com"]
+                    junk_texts = ["갤러리", "마이너 갤러리", "미니 갤러리", "실시간 베스트", "null", "dcinside.com"]
                     if clean_txt in junk_texts: continue
                     if "이용안내" in clean_txt or "개인정보" in clean_txt: continue
 
@@ -199,7 +202,7 @@ async def capture_ads(context, page, env, gallery, page_type):
                             
                             clean_final = final_url.rstrip('/').lower() if final_url else ""
                             if "null" in clean_final or "__click__" in clean_final: continue
-                            if clean_final in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m"]: continue
+                            if clean_final in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini"]: continue
                             
                             pos = get_korean_position(env, page_type, raw_pos, clean_img)
                             text_val = clean_txt if clean_txt else "이미지 배너"
@@ -218,9 +221,9 @@ async def task_runner(sem, ctx, env, tgt, queue):
         try:
             target_url = tgt['pc'] if env=="PC" else tgt['mo']
             
-            # 🔥 갤러리 ID 추출 (주소 체계 분석)
+            # 🔥 갤러리 ID 추출 (모든 주소 체계 공통)
             gallery_id = ""
-            if env == "PC":
+            if "id=" in target_url:
                 gallery_id = target_url.split("id=")[-1].split("&")[0]
             else:
                 gallery_id = target_url.split("/")[-1]
@@ -228,34 +231,40 @@ async def task_runner(sem, ctx, env, tgt, queue):
             await page.goto(target_url, wait_until="load", timeout=15000)
             await asyncio.sleep(1.5)
             
-            # 🔥 [가장 확실한 튕김 판별법] 접속된 주소에 '갤러리 ID'가 안 보이면 튕긴 것!
+            # 🔥 [불도저급 3단 우회 탐색기] 접속 후 주소에 ID가 없으면 무조건 튕긴 것!
             current_url = page.url.lower()
-            
             if gallery_id.lower() not in current_url:
                 if env == "PC":
-                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 정규 갤러리 아님. 마이너 갤러리로 우회 시도...")
-                    minor_url = f"https://gall.dcinside.com/mgallery/board/lists/?id={gallery_id}"
-                    await page.goto(minor_url, wait_until="load", timeout=15000)
-                    await asyncio.sleep(1.5)
-                    
-                    # 마이너에서도 튕겼다면? (여전히 ID가 안 보이면)
-                    if gallery_id.lower() not in page.url.lower():
-                        print(f"🚨 [서버 {CHUNK_INDEX+1}|{tgt['name']}] 마이너 갤러리도 아님. 미니 갤러리로 최종 우회 시도...")
-                        mini_url = f"https://gall.dcinside.com/mini/board/lists/?id={gallery_id}"
-                        await page.goto(mini_url, wait_until="load", timeout=15000)
+                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 정규/마이너 주소 실패. 자동 탐색 시작...")
+                    # 3가지 경우의 수를 전부 직접 타격
+                    test_urls = [
+                        f"https://gall.dcinside.com/board/lists/?id={gallery_id}",
+                        f"https://gall.dcinside.com/mgallery/board/lists/?id={gallery_id}",
+                        f"https://gall.dcinside.com/mini/board/lists/?id={gallery_id}"
+                    ]
+                    for t_url in test_urls:
+                        await page.goto(t_url, wait_until="load", timeout=12000)
                         await asyncio.sleep(1.5)
-                
+                        if gallery_id.lower() in page.url.lower():
+                            print(f"✅ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 올바른 주소 발견 및 안착 완료!")
+                            break
                 elif env == "MO":
-                    # 모바일은 정규/마이너 주소 구조(/board/id)가 똑같음. 여기서 튕겼으면 100% 미니 갤러리임.
-                    print(f"🚨 [서버 {CHUNK_INDEX+1}|{tgt['name']}] 모바일 메인 튕김. 미니 갤러리로 우회 시도...")
-                    mini_url = f"https://m.dcinside.com/mini/{gallery_id}"
-                    await page.goto(mini_url, wait_until="load", timeout=15000)
-                    await asyncio.sleep(1.5)
+                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 모바일 기본 주소 실패. 자동 탐색 시작...")
+                    test_urls = [
+                        f"https://m.dcinside.com/board/{gallery_id}",
+                        f"https://m.dcinside.com/mini/{gallery_id}"
+                    ]
+                    for t_url in test_urls:
+                        await page.goto(t_url, wait_until="load", timeout=12000)
+                        await asyncio.sleep(1.5)
+                        if gallery_id.lower() in page.url.lower():
+                            print(f"✅ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 올바른 주소 발견 및 안착 완료!")
+                            break
 
             # 리스트 광고 수집
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
             
-            # 본문 진입 (어떤 갤러리든 게시글 구조는 똑같음)
+            # 본문 진입
             post = page.locator("tr.us-post:not(.notice) td.gall_tit > a:not(.reply_numbox)").first if env=="PC" else page.locator("ul.gall-detail-lst li:not(.notice) .gall-detail-lnktit a").first
             if await post.count() > 0:
                 await post.click()
@@ -267,7 +276,6 @@ async def task_runner(sem, ctx, env, tgt, queue):
 async def main():
     if not TARGET_GALLERIES: return
     
-    # 🔥 할당된 갤러리 명단 출력
     gallery_names = [g['name'] for g in TARGET_GALLERIES]
     print(f"🔥 [서버 {CHUNK_INDEX+1}] 가동! 할당된 갤러리 {len(TARGET_GALLERIES)}개: {', '.join(gallery_names)}")
     
