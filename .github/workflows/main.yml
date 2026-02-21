@@ -5,7 +5,7 @@ on:
   
   # 🔥 한국 시간 매일 오전 5시 자동 실행 (UTC 기준 20:00)
   schedule:
-    - cron: '30 01 * * *'
+    - cron: '0 20 * * *'
 
 jobs:
   build:
