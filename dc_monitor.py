@@ -9,23 +9,23 @@ from datetime import datetime
 SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
-# 🔥 37개 갤러리 100% 정답 주소 완료
+# 🔥 사용자님이 직접 찾아주신 100% 완벽한 정답 주소 리스트 반영 완료!
 ALL_GALLERIES = [
     # 🏢 [정규 갤러리]
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
     {"name": "7급공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=7th", "mo": "https://m.dcinside.com/board/7th"},
     {"name": "고시시험갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=exam_new", "mo": "https://m.dcinside.com/board/exam_new"},
     {"name": "공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=government", "mo": "https://m.dcinside.com/board/government"},
-    {"name": "대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=univ_new", "mo": "https://m.dcinside.com/board/univ_new"},
+    {"name": "대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=pgschool", "mo": "https://m.dcinside.com/board/pgschool"}, # 🔥 ID 수정 완료
     {"name": "법학전문대학원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=lawschool", "mo": "https://m.dcinside.com/board/lawschool"},
     {"name": "세무사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cta", "mo": "https://m.dcinside.com/board/cta"},
     {"name": "소방갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=fire", "mo": "https://m.dcinside.com/board/fire"},
     {"name": "순경갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=policeofficer", "mo": "https://m.dcinside.com/board/policeofficer"},
     {"name": "어학연수갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=language", "mo": "https://m.dcinside.com/board/language"},
     {"name": "영어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=English", "mo": "https://m.dcinside.com/board/English"},
-    {"name": "영어회화갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=englishspeech", "mo": "https://m.dcinside.com/board/englishspeech"},
+    {"name": "영어회화갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=ec", "mo": "https://m.dcinside.com/board/ec"}, # 🔥 ID 수정 완료
     {"name": "일어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=japanese", "mo": "https://m.dcinside.com/board/japanese"},
-    {"name": "임용갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=imyoung", "mo": "https://m.dcinside.com/board/imyoung"},
+    {"name": "임용갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=tce", "mo": "https://m.dcinside.com/board/tce"}, # 🔥 ID 수정 완료
     {"name": "자격증갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=coq", "mo": "https://m.dcinside.com/board/coq"},
     {"name": "중국어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=chinese", "mo": "https://m.dcinside.com/board/chinese"},
     {"name": "토익갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=toeic", "mo": "https://m.dcinside.com/board/toeic"},
@@ -34,7 +34,6 @@ ALL_GALLERIES = [
     {"name": "학점은행제갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=acbs", "mo": "https://m.dcinside.com/board/acbs"},
     {"name": "해양경찰갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=kcg", "mo": "https://m.dcinside.com/board/kcg"},
     {"name": "회계사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cpa", "mo": "https://m.dcinside.com/board/cpa"},
-    {"name": "러시아갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=russia", "mo": "https://m.dcinside.com/board/russia"},
 
     # ⛺ [마이너 갤러리]
     {"name": "HSK갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=hsk123456", "mo": "https://m.dcinside.com/board/hsk123456"},
@@ -42,6 +41,7 @@ ALL_GALLERIES = [
     {"name": "공인중개사갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=bokdukbang", "mo": "https://m.dcinside.com/board/bokdukbang"},
     {"name": "군무원갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=soider", "mo": "https://m.dcinside.com/board/soider"},
     {"name": "듀오링고갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=duolingo", "mo": "https://m.dcinside.com/board/duolingo"},
+    {"name": "러시아갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=russia", "mo": "https://m.dcinside.com/board/russia"}, # 🔥 마이너 갤러리로 이동 및 ID 수정 완료
     {"name": "마이스터고갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=meister", "mo": "https://m.dcinside.com/board/meister"},
     {"name": "오픽갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=opic", "mo": "https://m.dcinside.com/board/opic"},
     {"name": "유학시험갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=eju", "mo": "https://m.dcinside.com/board/eju"},
@@ -123,7 +123,6 @@ async def capture_ads(context, page, env, gallery, page_type):
     collected, seen = [], set()
     today = datetime.now().strftime("%Y-%m-%d")
     
-    # 🔥 무의미한 대기 최소화: 최대 6번만 시도하고 쿨하게 패스!
     valid_refreshes, attempt = 0, 0
     prefix = f"[서버 {CHUNK_INDEX+1}|{env}|{gallery[:4]}|{page_type}]"
     
@@ -240,7 +239,6 @@ async def task_runner(sem, ctx, env, tgt, queue):
         await asyncio.sleep(random.uniform(0, 1.5))
         page = await ctx.new_page()
         
-        # 🔥 ALERT(팝업) 창 때문에 무한 대기하는 현상 완벽 방지
         page.on("dialog", lambda dialog: asyncio.create_task(dialog.accept()))
         
         await page.route("**/*", block_resources)
@@ -256,15 +254,12 @@ async def task_runner(sem, ctx, env, tgt, queue):
             await page.goto(target_url, wait_until="load", timeout=15000)
             await asyncio.sleep(1.5)
             
-            # 🔥 [혁명적 속도 개선] 4초 대기(wait_for_selector) 폐기! 
-            # 타이틀 이름으로 0.1초 만에 즉각 판별하여 멀쩡한 갤러리 오인 방지
             page_title = await page.title()
             current_url = page.url.lower()
             keyword = tgt['name'].replace("갤러리", "").strip()
             
             bounce_urls = ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini"]
             
-            # 갤러리 이름이 타이틀에 안보이거나 메인으로 튕기면 100% 주소 오류!
             if keyword not in page_title.replace(" ", "") or current_url in bounce_urls:
                 if env == "PC":
                     print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 잘못된 주소 감지. 스피드 우회 탐색 시작...")
