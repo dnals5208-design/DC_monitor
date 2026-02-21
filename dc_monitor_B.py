@@ -8,7 +8,6 @@ from datetime import datetime
 SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
-# [Group B] 나머지 18개 갤러리 할당
 TARGET_GALLERIES = [
     {"name": "오픽갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=opic", "mo": "https://m.dcinside.com/board/opic"},
     {"name": "유학시험갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=eju", "mo": "https://m.dcinside.com/board/eju"},
@@ -47,7 +46,7 @@ async def uploader_worker(queue, ws):
         if item is None: break
         buffer.append(item)
         if len(buffer) >= 250:
-            print(f"🚀 [Group B] 250개 도달! 구글 시트 업로드 중...")
+            print(f"🚀 [B팀] 250개 도달! 구글 시트 분할 업로드 중...")
             await asyncio.to_thread(safe_batch_upload, ws, buffer)
             buffer.clear()
         queue.task_done()
@@ -79,20 +78,27 @@ async def get_final_landing_url(context, redirect_url):
     except: return redirect_url
 
 async def block_resources(route):
-    if route.request.resource_type in ["font", "media", "stylesheet"]: await route.abort()
-    elif route.request.resource_type == "image" and not any(k in route.request.url for k in ["dcinside", "toast", "ads"]): await route.abort()
-    else: await route.continue_()
+    if route.request.resource_type in ["font", "media"]:
+        await route.abort()
+    else: 
+        await route.continue_()
 
 async def capture_ads(context, page, env, gallery, page_type):
     collected, seen = [], set()
     today = datetime.now().strftime("%Y-%m-%d")
-    valid = attempt = 0
+    valid_refreshes = 0
+    attempt = 0
+    prefix = f"[B팀|{env}|{gallery[:4]}|{page_type}]"
     
-    while valid < 10 and attempt < 25:
-        attempt += 1; found = False
+    while valid_refreshes < 10 and attempt < 30:
+        attempt += 1
+        found_ad_in_this_round = False
+        current_round = valid_refreshes + 1
+        ad_count_in_round = 0
+        
         try:
-            await page.reload(wait_until="commit", timeout=10000)
-            await asyncio.sleep(1.5)
+            await page.reload(wait_until="domcontentloaded", timeout=15000)
+            await asyncio.sleep(2)
             if page_type == "본문": await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
         except: pass
 
@@ -110,16 +116,21 @@ async def capture_ads(context, page, env, gallery, page_type):
                     if any(w in txt for w in ["이용안내", "이용약관", "개인정보", "광고안내"]): continue
 
                     if any(k in href or k in img_src for k in ["addc.dc", "NetInsight", "nstatic", "toast"]):
-                        found = True
+                        found_ad_in_this_round = True
                         key = img_src or href
                         if key not in seen:
                             seen.add(key)
+                            ad_count_in_round += 1
                             final_url = await get_final_landing_url(context, href)
                             pos = get_korean_position(env, page_type, raw_pos, img_src)
-                            print(f"✅ [B팀|{env}|{gallery[:4]}] {pos} 포착!")
+                            
+                            print(f"✅ {prefix} [{current_round}회차 새로고침 - {ad_count_in_round}번째 발견] {pos}")
                             collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": final_url, "img": img_src, "text": txt.strip()})
             except: continue
-        if found: valid += 1
+            
+        if found_ad_in_this_round: 
+            valid_refreshes += 1
+            
     return collected
 
 async def task_runner(sem, ctx, env, tgt, queue):
@@ -128,22 +139,22 @@ async def task_runner(sem, ctx, env, tgt, queue):
         page = await ctx.new_page()
         await page.route("**/*", block_resources)
         try:
-            await page.goto(tgt['pc'] if env=="PC" else tgt['mo'], wait_until="commit", timeout=12000)
+            await page.goto(tgt['pc'] if env=="PC" else tgt['mo'], wait_until="domcontentloaded", timeout=15000)
             await asyncio.sleep(1.5)
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
             
-            post = page.locator("tr.us-post:not(.notice) td.gall_tit > a").first if env=="PC" else page.locator("ul.gall-detail-lst li:not(.notice) a").first
+            post = page.locator("tr.us-post:not(.notice) td.gall_tit > a:not(.reply_numbox)").first if env=="PC" else page.locator("ul.gall-detail-lst li:not(.notice) .gall-detail-lnktit a").first
             if await post.count() > 0:
                 await post.click()
-                await asyncio.sleep(1.5)
+                await asyncio.sleep(2)
                 for item in await capture_ads(ctx, page, env, tgt['name'], "본문"): await queue.put(item)
         except: pass
         finally: await page.close()
 
 async def main():
-    print("⏳ [Group B] A팀이 구글 시트를 청소할 때까지 30초 대기합니다...")
-    time.sleep(30) # A팀이 충돌 없이 청소할 시간을 넉넉히 줌
-    print("🚀 [Group B] 20~37번 갤러리 수집 시작!")
+    print("⏳ [B팀] A팀이 구글 시트를 청소할 때까지 30초 대기합니다...")
+    time.sleep(30)
+    print("🚀 [B팀] 20~37번 갤러리 정밀 수집 시작!")
     
     gc = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
     ws = gc.open_by_url(SHEET_URL).get_worksheet(0)
@@ -151,7 +162,7 @@ async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled", "--no-sandbox"])
         pc_ctx, mo_ctx = await browser.new_context(viewport={"width": 1920, "height": 1080}), await browser.new_context(**p.devices['iPhone 13'])
-        sem, queue = asyncio.Semaphore(8), asyncio.Queue()
+        sem, queue = asyncio.Semaphore(6), asyncio.Queue()
         uploader = asyncio.create_task(uploader_worker(queue, ws))
 
         tasks = [task_runner(sem, pc_ctx, "PC", t, queue) for t in TARGET_GALLERIES] + [task_runner(sem, mo_ctx, "MO", t, queue) for t in TARGET_GALLERIES]
@@ -159,6 +170,6 @@ async def main():
         await browser.close()
         await queue.put(None)
         await uploader
-        print("🎉 [Group B] 작업 완료!")
+        print("🎉 [B팀] 작업 완료!")
 
 if __name__ == "__main__": asyncio.run(main())
