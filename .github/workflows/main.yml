@@ -3,7 +3,7 @@ name: 디시인사이드 광고 모니터링 자동화
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 21 * * *' # KST 오전 6시 30분 실행
+    - cron: '0 22 * * *' # KST 오전 7시 실행
 
 jobs:
   # 1단계: 시트 청소 전담
