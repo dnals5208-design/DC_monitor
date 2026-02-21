@@ -9,23 +9,23 @@ from datetime import datetime
 SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
-# 🔥 사용자님이 직접 찾아주신 100% 완벽한 정답 주소 리스트 반영 완료!
+# 🔥 사용자님이 직접 찾아주신 100% 완벽한 정답 주소 리스트 탑재!
 ALL_GALLERIES = [
     # 🏢 [정규 갤러리]
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
     {"name": "7급공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=7th", "mo": "https://m.dcinside.com/board/7th"},
     {"name": "고시시험갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=exam_gosi", "mo": "https://m.dcinside.com/board/exam_gosi"},
     {"name": "공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=government", "mo": "https://m.dcinside.com/board/government"},
-    {"name": "대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=pgschool", "mo": "https://m.dcinside.com/board/pgschool"}, # 🔥 ID 수정 완료
+    {"name": "대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=pgschool", "mo": "https://m.dcinside.com/board/pgschool"},
     {"name": "법학전문대학원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=lawschool", "mo": "https://m.dcinside.com/board/lawschool"},
     {"name": "세무사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cta", "mo": "https://m.dcinside.com/board/cta"},
     {"name": "소방갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=firefighter", "mo": "https://m.dcinside.com/board/firefighter"},
     {"name": "순경갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=policeofficer", "mo": "https://m.dcinside.com/board/policeofficer"},
     {"name": "어학연수갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=lsa", "mo": "https://m.dcinside.com/board/lsa"},
     {"name": "영어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=English", "mo": "https://m.dcinside.com/board/English"},
-    {"name": "영어회화갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=ec", "mo": "https://m.dcinside.com/board/ec"}, # 🔥 ID 수정 완료
+    {"name": "영어회화갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=ec", "mo": "https://m.dcinside.com/board/ec"},
     {"name": "일어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=japanese", "mo": "https://m.dcinside.com/board/japanese"},
-    {"name": "임용갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=tce", "mo": "https://m.dcinside.com/board/tce"}, # 🔥 ID 수정 완료
+    {"name": "임용갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=tce", "mo": "https://m.dcinside.com/board/tce"},
     {"name": "자격증갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=coq", "mo": "https://m.dcinside.com/board/coq"},
     {"name": "중국어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=chinese", "mo": "https://m.dcinside.com/board/chinese"},
     {"name": "토익갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=toeic", "mo": "https://m.dcinside.com/board/toeic"},
@@ -41,7 +41,7 @@ ALL_GALLERIES = [
     {"name": "공인중개사갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=bokdukbang", "mo": "https://m.dcinside.com/board/bokdukbang"},
     {"name": "군무원갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=soider", "mo": "https://m.dcinside.com/board/soider"},
     {"name": "듀오링고갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=duolingo", "mo": "https://m.dcinside.com/board/duolingo"},
-    {"name": "러시아갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=russia", "mo": "https://m.dcinside.com/board/russia"}, # 🔥 마이너 갤러리로 이동 및 ID 수정 완료
+    {"name": "러시아갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=russia", "mo": "https://m.dcinside.com/board/russia"},
     {"name": "마이스터고갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=meister", "mo": "https://m.dcinside.com/board/meister"},
     {"name": "오픽갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=opic", "mo": "https://m.dcinside.com/board/opic"},
     {"name": "유학시험갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=ue", "mo": "https://m.dcinside.com/board/ue"},
@@ -155,13 +155,7 @@ async def capture_ads(context, page, env, gallery, page_type):
                     }""")
                     
                     clean_href = raw_href.strip().lower()
-                    if any(k in clean_href for k in ["google", "adsrvr", "criteo", "taboola", "doubleclick"]): continue
-                    if not clean_href or clean_href == "#" or "javascript" in clean_href: continue
                     
-                    stripped_href = clean_href.rstrip('/')
-                    if stripped_href in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini"]: continue
-                    if any(x in clean_href for x in ["/board/dcbest", "policy", "useinfo", "gall.dcinside.com/mini"]): continue
-
                     img_src = await ad.evaluate("""n => {
                         let img = n.querySelector('img');
                         if (img) {
@@ -187,49 +181,64 @@ async def capture_ads(context, page, env, gallery, page_type):
                     
                     clean_img = img_src.strip().lower()
                     clean_txt = txt.strip()
-                    
-                    if (not clean_href or clean_href == "#" or "javascript" in clean_href) and not clean_img: continue
-                    
-                    junk_images = ["noimage", "tit_", "sp_", "logo", "g_img", "blank", "/images/"]
-                    if any(j in clean_img for j in junk_images) and "/ad/" not in clean_img: continue
-                    if "close" in clean_img or "googleactiveview" in str(raw_pos).lower(): continue
-                    
-                    junk_texts = ["갤러리", "마이너 갤러리", "미니 갤러리", "실시간 베스트", "null", "dcinside.com"]
-                    if clean_txt in junk_texts: continue
-                    if "이용안내" in clean_txt or "개인정보" in clean_txt: continue
-                    if clean_txt.endswith("갤러리"): continue
 
-                    ad_networks = [
-                        "addc.dc", "netinsight", "nstatic", "toast", 
-                        "google", "doubleclick", "googlesyndication", "googleadservices", 
-                        "criteo", "adsrvr", "adnxs", "smartadserver", "taboola", "outbrain"
-                    ]
+                    # 🚫 1. 텍스트 세탁 및 dcinside 자체 텍스트 무효화
+                    if clean_txt.lower() == "null": clean_txt = ""
+                    if "dcinside.com" in clean_txt.lower(): clean_txt = ""
+                    
+                    # 🚫 2. 강력한 쓰레기 블랙리스트 (텍스트) - "광고안내", "갤러리" 글자 원천 차단
+                    junk_texts = ["갤러리", "마이너 갤러리", "미니 갤러리", "실시간 베스트", "광고안내", "이용안내", "개인정보", "운영자"]
+                    if any(j in clean_txt for j in junk_texts) or clean_txt.endswith("갤러리") or clean_txt == "광고안내": 
+                        continue
 
-                    if any(k in clean_href or k in clean_img for k in ad_networks):
-                        if not clean_img and not clean_txt: continue 
+                    # 🚫 3. 강력한 쓰레기 블랙리스트 (이미지) - 회색 g로고, 갤러리 버튼, dcad 배너 완벽 방어
+                    junk_images = ["noimage", "tit_", "sp_", "logo", "g_img", "blank", "/images/", "/dcad/"]
+                    if any(j in clean_img for j in junk_images): 
+                        continue
+
+                    # 🚫 4. 사용자 요청: 구글, 크리테오 등 외부 네트워크 배너 철저히 버리기
+                    external_ad_networks = ["google", "adsrvr", "criteo", "taboola", "doubleclick", "adnxs", "smartadserver"]
+                    if any(k in clean_href for k in external_ad_networks): 
+                        continue
+
+                    # ✅ 5. 오직 진짜 '디시 직접 광고'만 허용하는 화이트리스트
+                    is_real_ad = False
+                    if "addc.dc" in clean_href or "netinsight" in clean_href or "toast" in clean_href:
+                        is_real_ad = True
+                    elif "/ad/" in clean_img and "/dcad/" not in clean_img:
+                        is_real_ad = True
                         
-                        found_ad_in_this_round = True
-                        key = clean_img or raw_href
-                        if key not in seen:
-                            seen.add(key)
-                            ad_count_in_round += 1
+                    if not is_real_ad: 
+                        continue
+                        
+                    # 🚫 6. 빈 껍데기 유령 데이터 최종 차단
+                    if not clean_img and not clean_txt: 
+                        continue
+
+                    found_ad_in_this_round = True
+                    key = clean_img or raw_href
+                    if key not in seen:
+                        seen.add(key)
+                        ad_count_in_round += 1
+                        
+                        final_url = await get_final_landing_url(context, raw_href) if not raw_href.startswith("javascript") else raw_href
+                        clean_final = final_url.strip()
+                        
+                        # 🧼 __CLICK__ 및 껍데기 URL 깔끔하게 세탁하기
+                        clean_final = clean_final.replace("__CLICK__", "").replace("__click__", "")
+                        
+                        if not clean_final or clean_final.lower() in ["null", "#", "http://null", "https://null"]:
+                            clean_final = "랜딩 URL 숨김 (클릭 이벤트)"
                             
-                            final_url = await get_final_landing_url(context, raw_href) if not raw_href.startswith("javascript") else raw_href
-                            clean_final = final_url.rstrip('/').lower() if final_url else ""
-                            
-                            if "null" in clean_final or "__click__" in clean_final:
-                                final_url = "랜딩 URL 숨김 (클릭 이벤트)"
-                            elif "__CLICK__" in final_url.upper():
-                                final_url = final_url.replace("__CLICK__", "").replace("__click__", "")
-                                
-                            if clean_final in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini"]: 
-                                final_url = "랜딩 URL 숨김 (내부 보안)"
-                            
-                            pos = get_korean_position(env, page_type, raw_pos, clean_img)
-                            text_val = clean_txt if clean_txt else "이미지 배너"
-                            
-                            print(f"✅ {prefix} [{current_round}회차 새로고침 - {ad_count_in_round}번째 발견] {pos}")
-                            collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": final_url, "img": img_src.strip(), "text": text_val})
+                        # 디시 내부 링크로 튕기는 건 숨김 처리
+                        if any(clean_final.rstrip('/').lower() == b for b in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini"]):
+                            clean_final = "랜딩 URL 숨김 (내부 보안)"
+                        
+                        pos = get_korean_position(env, page_type, raw_pos, clean_img)
+                        text_val = clean_txt if clean_txt else "이미지 배너"
+                        
+                        print(f"✅ {prefix} [{current_round}회차 새로고침 - {ad_count_in_round}번째 발견] {pos}")
+                        collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": clean_final, "img": img_src.strip(), "text": text_val})
             except: continue
         if found_ad_in_this_round: valid_refreshes += 1
     return collected
