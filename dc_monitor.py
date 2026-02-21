@@ -49,7 +49,6 @@ ALL_GALLERIES = [
     {"name": "회계사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cpa", "mo": "https://m.dcinside.com/board/cpa"}
 ]
 
-# 10대 서버 분배 공식
 CHUNK_INDEX = int(os.getenv("CHUNK_INDEX", 0))
 TOTAL_CHUNKS = int(os.getenv("TOTAL_CHUNKS", 1))
 
@@ -119,17 +118,26 @@ async def block_resources(route):
 async def capture_ads(context, page, env, gallery, page_type):
     collected, seen = [], set()
     today = datetime.now().strftime("%Y-%m-%d")
+    
+    # 🔥 속도 최적화: 시도 횟수(15)와 유효 횟수(7)를 줄여서 빈 갤러리 무한 대기 방지
     valid_refreshes, attempt = 0, 0
     prefix = f"[서버 {CHUNK_INDEX+1}|{env}|{gallery[:4]}|{page_type}]"
     
-    while valid_refreshes < 10 and attempt < 30:
+    while valid_refreshes < 7 and attempt < 15:
         attempt += 1; found_ad_in_this_round = False
         current_round = valid_refreshes + 1
         ad_count_in_round = 0
         try:
-            await page.reload(wait_until="domcontentloaded", timeout=15000)
-            await asyncio.sleep(2)
-            if page_type == "본문": await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+            await page.reload(wait_until="domcontentloaded", timeout=12000)
+            await asyncio.sleep(1.5)
+            
+            # 🔥 지연 로딩 방어: 스크롤을 3단계로 쪼개어 내려 숨은 배너들을 모두 기상시킴
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 3);")
+            await asyncio.sleep(0.5)
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 1.5);")
+            await asyncio.sleep(0.5)
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+            await asyncio.sleep(1)
         except: pass
 
         for frame in page.frames:
@@ -138,14 +146,14 @@ async def capture_ads(context, page, env, gallery, page_type):
                     href = await ad.get_attribute("href") or ""
                     clean_href = href.strip().lower()
                     
-                    # 🚫 1. 링크 껍데기(__CLICK__, null) 완전 차단
-                    if "__click__" in clean_href or "null" in clean_href: continue
+                    # 🚫 1. 링크 껍데기(__CLICK__, null, 빈 링크) 완벽 차단
                     if not clean_href or clean_href == "#" or "javascript" in clean_href: continue
+                    if "__click__" in clean_href or "null" in clean_href: continue
                     
-                    # 🚫 2. 내부 메뉴(실시간 베스트, 갤러리 메인 등) 차단
+                    # 🚫 2. 디시 내부 UI 버튼(로고, 마이너갤러리, 실시간베스트 등) 차단
                     stripped_href = clean_href.rstrip('/')
                     if stripped_href in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m"]: continue
-                    if "/board/dcbest" in clean_href or "policy" in clean_href or "useinfo" in clean_href: continue
+                    if any(x in clean_href for x in ["/board/dcbest", "policy", "useinfo", "gall.dcinside.com/mini"]): continue
 
                     img_src = await ad.evaluate("""n => {
                         let img = n.querySelector('img');
@@ -169,19 +177,23 @@ async def capture_ads(context, page, env, gallery, page_type):
                     
                     raw_pos = await ad.evaluate("n => { let p = n.closest('div'); return p ? p.className : ''; }")
                     txt = await ad.inner_text() or ""
+                    
                     clean_img = img_src.strip().lower()
+                    clean_txt = txt.strip()
                     
-                    # 🚫 3. [핵심] UI 디자인 요소 완벽 차단 (회색 g 로고, 텍스트 타이틀, 아이콘)
-                    if any(k in clean_img for k in ["noimage", "/images/", "sp_", "tit_", "logo"]): continue
-                    
+                    # 🚫 3. 블랙리스트: 디시 디자인 아이콘 및 껍데기 이미지 완벽 소각
+                    junk_images = ["noimage", "tit_", "sp_", "logo", "g_img", "blank", "/images/"]
+                    if any(j in clean_img for j in junk_images) and "/ad/" not in clean_img: continue
                     if "close" in clean_img or "googleactiveview" in str(raw_pos).lower(): continue
-                    if any(w in txt for w in ["이용안내", "이용약관", "개인정보", "광고안내"]): continue
+                    
+                    # 🚫 4. 텍스트 블랙리스트: UI 텍스트 차단
+                    junk_texts = ["갤러리", "마이너 갤러리", "실시간 베스트", "null", "dcinside.com"]
+                    if clean_txt in junk_texts: continue
+                    if "이용안내" in clean_txt or "개인정보" in clean_txt: continue
 
-                    # ✅ 4. 최종 광고 수집 조건
+                    # ✅ 5. 최종 광고 판별
                     if any(k in href or k in img_src for k in ["addc.dc", "NetInsight", "nstatic", "toast"]):
-                        clean_txt = txt.strip()
-                        
-                        # 내용이 아예 없는 껍데기 유령광고 버리기
+                        # 속이 텅 빈 유령 데이터 방어
                         if not clean_img and not clean_txt: continue
                         
                         found_ad_in_this_round = True
@@ -191,10 +203,10 @@ async def capture_ads(context, page, env, gallery, page_type):
                             ad_count_in_round += 1
                             final_url = await get_final_landing_url(context, href)
                             
-                            # 랜딩 URL을 파봤는데 디시 내부 링크거나 null이면 또 버림
-                            stripped_final = final_url.rstrip('/').lower() if final_url else ""
-                            if stripped_final in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m"]: continue
-                            if "null" in stripped_final or "/board/dcbest" in stripped_final: continue
+                            # 최종 URL 재확인 (여기서 한 번 더 null과 디시 메인 링크 걸러냄)
+                            clean_final = final_url.rstrip('/').lower() if final_url else ""
+                            if "null" in clean_final or "__click__" in clean_final: continue
+                            if clean_final in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m"]: continue
                             
                             pos = get_korean_position(env, page_type, raw_pos, clean_img)
                             text_val = clean_txt if clean_txt else "이미지 배너"
@@ -211,7 +223,7 @@ async def task_runner(sem, ctx, env, tgt, queue):
         page = await ctx.new_page()
         await page.route("**/*", block_resources)
         try:
-            await page.goto(tgt['pc'] if env=="PC" else tgt['mo'], wait_until="domcontentloaded", timeout=15000)
+            await page.goto(tgt['pc'] if env=="PC" else tgt['mo'], wait_until="domcontentloaded", timeout=12000)
             await asyncio.sleep(1.5)
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
             
