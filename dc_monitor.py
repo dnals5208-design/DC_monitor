@@ -9,6 +9,7 @@ from datetime import datetime
 SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
+# 🔥 정병권 갤러리 ID(jeongbyeongkwon) 및 마이너 주소 직접 반영 완료!
 ALL_GALLERIES = [
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
     {"name": "7급공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=7th", "mo": "https://m.dcinside.com/board/7th"},
@@ -35,7 +36,7 @@ ALL_GALLERIES = [
     {"name": "임용고시갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=imyoung", "mo": "https://m.dcinside.com/board/imyoung"},
     {"name": "자격증갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=coq", "mo": "https://m.dcinside.com/board/coq"},
     {"name": "전산세무회계갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=accounting", "mo": "https://m.dcinside.com/board/accounting"},
-    {"name": "정병권갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=jeongbk", "mo": "https://m.dcinside.com/board/jeongbk"},
+    {"name": "정병권갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=jeongbyeongkwon", "mo": "https://m.dcinside.com/board/jeongbyeongkwon"},
     {"name": "중국어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=chinese", "mo": "https://m.dcinside.com/board/chinese"},
     {"name": "지텔프갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=gtelf", "mo": "https://m.dcinside.com/board/gtelf"},
     {"name": "컴퓨터활용능력갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=itlicense", "mo": "https://m.dcinside.com/board/itlicense"},
@@ -49,7 +50,7 @@ ALL_GALLERIES = [
     {"name": "회계사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cpa", "mo": "https://m.dcinside.com/board/cpa"}
 ]
 
-# 🚀 10대 서버 완벽 분배 공식
+# 10대 서버 분배식 유지
 CHUNK_INDEX = int(os.getenv("CHUNK_INDEX", 0))
 TOTAL_CHUNKS = int(os.getenv("TOTAL_CHUNKS", 1))
 
@@ -120,7 +121,6 @@ async def capture_ads(context, page, env, gallery, page_type):
     collected, seen = [], set()
     today = datetime.now().strftime("%Y-%m-%d")
     
-    # ⏱️ 대기 무한루프 방지를 위해 시도 횟수 적절히 제한
     valid_refreshes, attempt = 0, 0
     prefix = f"[서버 {CHUNK_INDEX+1}|{env}|{gallery[:4]}|{page_type}]"
     
@@ -129,7 +129,6 @@ async def capture_ads(context, page, env, gallery, page_type):
         current_round = valid_refreshes + 1
         ad_count_in_round = 0
         try:
-            # 🔥 지연 로딩 방어: 페이지 전체 로딩 대기 후 스크롤을 3단계로 내림
             await page.reload(wait_until="load", timeout=15000)
             await asyncio.sleep(2.5)
             
@@ -147,16 +146,13 @@ async def capture_ads(context, page, env, gallery, page_type):
                     href = await ad.get_attribute("href") or ""
                     clean_href = href.strip().lower()
                     
-                    # 🚫 1. 쓰레기 링크 1차 차단
                     if not clean_href or clean_href == "#" or "javascript" in clean_href: continue
                     if "__click__" in clean_href or "null" in clean_href: continue
                     
-                    # 🚫 2. 디시 내부 구조 링크 차단
                     stripped_href = clean_href.rstrip('/')
                     if stripped_href in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m"]: continue
                     if any(x in clean_href for x in ["/board/dcbest", "policy", "useinfo", "gall.dcinside.com/mini"]): continue
 
-                    # 🖼️ 숨은 이미지 추출 완벽 분석
                     img_src = await ad.evaluate("""n => {
                         let img = n.querySelector('img');
                         if (img) {
@@ -183,17 +179,14 @@ async def capture_ads(context, page, env, gallery, page_type):
                     clean_img = img_src.strip().lower()
                     clean_txt = txt.strip()
                     
-                    # 🚫 3. 디자인 UI 요소 원천 차단
                     junk_images = ["noimage", "tit_", "sp_", "logo", "g_img", "blank", "/images/"]
                     if any(j in clean_img for j in junk_images) and "/ad/" not in clean_img: continue
                     if "close" in clean_img or "googleactiveview" in str(raw_pos).lower(): continue
                     
-                    # 🚫 4. 텍스트 UI 원천 차단
                     junk_texts = ["갤러리", "마이너 갤러리", "실시간 베스트", "null", "dcinside.com"]
                     if clean_txt in junk_texts: continue
                     if "이용안내" in clean_txt or "개인정보" in clean_txt: continue
 
-                    # ✅ 5. 최종 광고 여부 확인
                     if any(k in href or k in img_src for k in ["addc.dc", "NetInsight", "nstatic", "toast"]):
                         if not clean_img and not clean_txt: continue
                         
@@ -204,7 +197,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                             ad_count_in_round += 1
                             final_url = await get_final_landing_url(context, href)
                             
-                            # 랜딩 URL 최종 검증 (디시 메인으로 튕기면 버림)
                             clean_final = final_url.rstrip('/').lower() if final_url else ""
                             if "null" in clean_final or "__click__" in clean_final: continue
                             if clean_final in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m"]: continue
@@ -225,38 +217,45 @@ async def task_runner(sem, ctx, env, tgt, queue):
         await page.route("**/*", block_resources)
         try:
             target_url = tgt['pc'] if env=="PC" else tgt['mo']
+            
+            # 🔥 갤러리 ID 추출 (주소 체계 분석)
+            gallery_id = ""
+            if env == "PC":
+                gallery_id = target_url.split("id=")[-1].split("&")[0]
+            else:
+                gallery_id = target_url.split("/")[-1]
+
             await page.goto(target_url, wait_until="load", timeout=15000)
             await asyncio.sleep(1.5)
             
-            # 🔥 [완벽 우회 시스템] 튕기면 정규 -> 마이너 -> 미니 순서로 끝까지 추적!
-            current_url = page.url.rstrip('/').lower()
-            bounce_urls = ["https://gall.dcinside.com", "http://gall.dcinside.com", "https://www.dcinside.com", "https://m.dcinside.com"]
+            # 🔥 [가장 확실한 튕김 판별법] 접속된 주소에 '갤러리 ID'가 안 보이면 튕긴 것!
+            current_url = page.url.lower()
             
-            if env == "PC" and current_url in bounce_urls:
-                print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 정규 갤러리 아님. 마이너 갤러리로 1차 우회 시도...")
-                target_url = target_url.replace("/board/lists/?", "/mgallery/board/lists/?")
-                await page.goto(target_url, wait_until="load", timeout=15000)
-                await asyncio.sleep(1.5)
-                
-                # 마이너에서도 튕기면 미니 갤러리로 2차 우회
-                current_url = page.url.rstrip('/').lower()
-                if current_url in bounce_urls:
-                    print(f"🚨 [서버 {CHUNK_INDEX+1}|{tgt['name']}] 마이너 갤러리도 아님. 미니 갤러리로 최종 우회 시도...")
-                    target_url = target_url.replace("/mgallery/board/lists/?", "/mini/board/lists/?")
-                    await page.goto(target_url, wait_until="load", timeout=15000)
+            if gallery_id.lower() not in current_url:
+                if env == "PC":
+                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 정규 갤러리 아님. 마이너 갤러리로 우회 시도...")
+                    minor_url = f"https://gall.dcinside.com/mgallery/board/lists/?id={gallery_id}"
+                    await page.goto(minor_url, wait_until="load", timeout=15000)
                     await asyncio.sleep(1.5)
-            
-            elif env == "MO" and current_url in bounce_urls:
-                # 모바일 환경에서 튕길 경우 미니 갤러리 구조로 치환
-                print(f"🚨 [서버 {CHUNK_INDEX+1}|{tgt['name']}] 모바일 메인 튕김. 미니 갤러리로 우회 시도...")
-                target_url = target_url.replace("/board/", "/mini/")
-                await page.goto(target_url, wait_until="load", timeout=15000)
-                await asyncio.sleep(1.5)
+                    
+                    # 마이너에서도 튕겼다면? (여전히 ID가 안 보이면)
+                    if gallery_id.lower() not in page.url.lower():
+                        print(f"🚨 [서버 {CHUNK_INDEX+1}|{tgt['name']}] 마이너 갤러리도 아님. 미니 갤러리로 최종 우회 시도...")
+                        mini_url = f"https://gall.dcinside.com/mini/board/lists/?id={gallery_id}"
+                        await page.goto(mini_url, wait_until="load", timeout=15000)
+                        await asyncio.sleep(1.5)
+                
+                elif env == "MO":
+                    # 모바일은 정규/마이너 주소 구조(/board/id)가 똑같음. 여기서 튕겼으면 100% 미니 갤러리임.
+                    print(f"🚨 [서버 {CHUNK_INDEX+1}|{tgt['name']}] 모바일 메인 튕김. 미니 갤러리로 우회 시도...")
+                    mini_url = f"https://m.dcinside.com/mini/{gallery_id}"
+                    await page.goto(mini_url, wait_until="load", timeout=15000)
+                    await asyncio.sleep(1.5)
 
             # 리스트 광고 수집
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
             
-            # 본문 진입
+            # 본문 진입 (어떤 갤러리든 게시글 구조는 똑같음)
             post = page.locator("tr.us-post:not(.notice) td.gall_tit > a:not(.reply_numbox)").first if env=="PC" else page.locator("ul.gall-detail-lst li:not(.notice) .gall-detail-lnktit a").first
             if await post.count() > 0:
                 await post.click()
@@ -268,7 +267,7 @@ async def task_runner(sem, ctx, env, tgt, queue):
 async def main():
     if not TARGET_GALLERIES: return
     
-    # 🔥 할당된 갤러리 명단 출력 (터미널에서 한눈에 확인 가능)
+    # 🔥 할당된 갤러리 명단 출력
     gallery_names = [g['name'] for g in TARGET_GALLERIES]
     print(f"🔥 [서버 {CHUNK_INDEX+1}] 가동! 할당된 갤러리 {len(TARGET_GALLERIES)}개: {', '.join(gallery_names)}")
     
