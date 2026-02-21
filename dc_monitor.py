@@ -9,8 +9,9 @@ from datetime import datetime
 SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
-# 🔥 37개 갤러리 정답 주소 리스트 (변경 없음)
+# 🔥 37개 갤러리 완벽 분류 (정규 22개 / 마이너 15개)
 ALL_GALLERIES = [
+    # 🏢 [정규 갤러리]
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
     {"name": "7급공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=7th", "mo": "https://m.dcinside.com/board/7th"},
     {"name": "고시시험갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=exam_new", "mo": "https://m.dcinside.com/board/exam_new"},
@@ -22,6 +23,7 @@ ALL_GALLERIES = [
     {"name": "순경갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=policeofficer", "mo": "https://m.dcinside.com/board/policeofficer"},
     {"name": "어학연수갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=language", "mo": "https://m.dcinside.com/board/language"},
     {"name": "영어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=English", "mo": "https://m.dcinside.com/board/English"},
+    {"name": "영어회화갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=englishspeech", "mo": "https://m.dcinside.com/board/englishspeech"},
     {"name": "일어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=japanese", "mo": "https://m.dcinside.com/board/japanese"},
     {"name": "임용고시갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=imyoung", "mo": "https://m.dcinside.com/board/imyoung"},
     {"name": "자격증갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=coq", "mo": "https://m.dcinside.com/board/coq"},
@@ -33,6 +35,7 @@ ALL_GALLERIES = [
     {"name": "해양경찰갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=kcg", "mo": "https://m.dcinside.com/board/kcg"},
     {"name": "회계사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cpa", "mo": "https://m.dcinside.com/board/cpa"},
 
+    # ⛺ [마이너 갤러리]
     {"name": "HSK갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=hsk123456", "mo": "https://m.dcinside.com/board/hsk123456"},
     {"name": "JLPT갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=jlpt", "mo": "https://m.dcinside.com/board/jlpt"},
     {"name": "공인중개사갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=bokdukbang", "mo": "https://m.dcinside.com/board/bokdukbang"},
@@ -40,7 +43,6 @@ ALL_GALLERIES = [
     {"name": "듀오링고갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=duolingo", "mo": "https://m.dcinside.com/board/duolingo"},
     {"name": "러시아어갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=russiangall", "mo": "https://m.dcinside.com/board/russiangall"},
     {"name": "마이스터고갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=meister", "mo": "https://m.dcinside.com/board/meister"},
-    {"name": "영어회화갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=englishspeech", "mo": "https://m.dcinside.com/board/englishspeech"},
     {"name": "오픽갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=opic", "mo": "https://m.dcinside.com/board/opic"},
     {"name": "유학시험갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=eju", "mo": "https://m.dcinside.com/board/eju"},
     {"name": "전산세무회계갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=accounting", "mo": "https://m.dcinside.com/board/accounting"},
@@ -121,7 +123,6 @@ async def capture_ads(context, page, env, gallery, page_type):
     collected, seen = [], set()
     today = datetime.now().strftime("%Y-%m-%d")
     
-    # 조기 종료 조건: 광고를 찾으면 빠르게 5회 시도 후 종료
     valid_refreshes, attempt = 0, 0
     prefix = f"[서버 {CHUNK_INDEX+1}|{env}|{gallery[:4]}|{page_type}]"
     
@@ -143,8 +144,24 @@ async def capture_ads(context, page, env, gallery, page_type):
         for frame in page.frames:
             try:
                 for ad in await frame.locator("a").all():
-                    raw_href = await ad.get_attribute("href") or ""
+                    raw_href = await ad.evaluate("""n => {
+                        if (n.href && !n.href.includes('__CLICK__') && !n.href.includes('__click__') && !n.href.includes('null')) return n.href;
+                        let oc = n.getAttribute('onclick');
+                        if (oc) {
+                            let m = oc.match(/['"](http[^'"]+)['"]/);
+                            if (m) return m[1];
+                        }
+                        return n.href || '';
+                    }""")
                     
+                    clean_href = raw_href.strip().lower()
+                    if any(k in clean_href for k in ["google", "adsrvr", "criteo", "taboola", "doubleclick"]): continue
+                    if not clean_href or clean_href == "#" or "javascript" in clean_href: continue
+                    
+                    stripped_href = clean_href.rstrip('/')
+                    if stripped_href in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini"]: continue
+                    if any(x in clean_href for x in ["/board/dcbest", "policy", "useinfo", "gall.dcinside.com/mini"]): continue
+
                     img_src = await ad.evaluate("""n => {
                         let img = n.querySelector('img');
                         if (img) {
@@ -168,48 +185,51 @@ async def capture_ads(context, page, env, gallery, page_type):
                     raw_pos = await ad.evaluate("n => { let p = n.closest('div'); return p ? p.className : ''; }")
                     txt = await ad.inner_text() or ""
                     
-                    clean_href = raw_href.strip().lower()
                     clean_img = img_src.strip().lower()
                     clean_txt = txt.strip()
                     
-                    # 🔥 [초강력 화이트리스트 검증] 진짜 광고 DNA가 있는지 확인!
-                    # 이미지에 /ad/ 가 있거나, 링크에 addc.dc, netinsight 가 있어야만 통과
-                    is_real_ad = False
-                    if "/ad/" in clean_img or "addc.dc" in clean_href or "netinsight" in clean_href:
-                        is_real_ad = True
-                        
-                    if not is_real_ad:
-                        continue # 가짜 쓰레기(갤러리 UI, 아이콘 등)는 여기서 전부 튕겨나감!
+                    if (not clean_href or clean_href == "#" or "javascript" in clean_href) and not clean_img: continue
+                    
+                    junk_images = ["noimage", "tit_", "sp_", "logo", "g_img", "blank", "/images/"]
+                    if any(j in clean_img for j in junk_images) and "/ad/" not in clean_img: continue
+                    if "close" in clean_img or "googleactiveview" in str(raw_pos).lower(): continue
+                    
+                    junk_texts = ["갤러리", "마이너 갤러리", "미니 갤러리", "실시간 베스트", "null", "dcinside.com"]
+                    if clean_txt in junk_texts: continue
+                    if "이용안내" in clean_txt or "개인정보" in clean_txt: continue
+                    if clean_txt.endswith("갤러리"): continue
 
-                    # 속이 텅 빈 유령 데이터 방어
-                    if not clean_img and not clean_txt: continue 
+                    ad_networks = [
+                        "addc.dc", "netinsight", "nstatic", "toast", 
+                        "google", "doubleclick", "googlesyndication", "googleadservices", 
+                        "criteo", "adsrvr", "adnxs", "smartadserver", "taboola", "outbrain"
+                    ]
 
-                    found_ad_in_this_round = True
-                    key = clean_img or raw_href
-                    if key not in seen:
-                        seen.add(key)
-                        ad_count_in_round += 1
+                    if any(k in clean_href or k in clean_img for k in ad_networks):
+                        if not clean_img and not clean_txt: continue 
                         
-                        final_url = await get_final_landing_url(context, raw_href) if not raw_href.startswith("javascript") else raw_href
-                        
-                        # 🔥 [완벽 해결] __CLICK__ 텍스트 예쁘게 세탁하기
-                        # 1. 아예 URL이 __CLICK__ 껍데기뿐이면 안내 문구로 교체
-                        if final_url.strip() in ["__CLICK__", "null", "#", ""]:
-                            final_url = "랜딩 URL 숨김 (클릭 이벤트)"
-                        # 2. 긴 URL 중간에 __CLICK__이 끼어있으면 해당 글자만 삭제
-                        elif "__CLICK__" in final_url.upper():
-                            final_url = final_url.replace("__CLICK__", "").replace("__click__", "")
-                        
-                        # 혹시 모를 내부 튕김 링크 한 번 더 차단
-                        clean_final = final_url.rstrip('/').lower()
-                        if clean_final in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m"]: 
-                            final_url = "랜딩 URL 숨김 (내부 보안)"
-                        
-                        pos = get_korean_position(env, page_type, raw_pos, clean_img)
-                        text_val = clean_txt if clean_txt else "이미지 배너"
-                        
-                        print(f"✅ {prefix} [{current_round}회차 새로고침 - {ad_count_in_round}번째 발견] {pos}")
-                        collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": final_url, "img": img_src.strip(), "text": text_val})
+                        found_ad_in_this_round = True
+                        key = clean_img or raw_href
+                        if key not in seen:
+                            seen.add(key)
+                            ad_count_in_round += 1
+                            
+                            final_url = await get_final_landing_url(context, raw_href) if not raw_href.startswith("javascript") else raw_href
+                            clean_final = final_url.rstrip('/').lower() if final_url else ""
+                            
+                            if "null" in clean_final or "__click__" in clean_final:
+                                final_url = "랜딩 URL 숨김 (클릭 이벤트)"
+                            elif "__CLICK__" in final_url.upper():
+                                final_url = final_url.replace("__CLICK__", "").replace("__click__", "")
+                                
+                            if clean_final in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini"]: 
+                                final_url = "랜딩 URL 숨김 (내부 보안)"
+                            
+                            pos = get_korean_position(env, page_type, raw_pos, clean_img)
+                            text_val = clean_txt if clean_txt else "이미지 배너"
+                            
+                            print(f"✅ {prefix} [{current_round}회차 새로고침 - {ad_count_in_round}번째 발견] {pos}")
+                            collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": final_url, "img": img_src.strip(), "text": text_val})
             except: continue
         if found_ad_in_this_round: valid_refreshes += 1
     return collected
@@ -231,11 +251,21 @@ async def task_runner(sem, ctx, env, tgt, queue):
             await page.goto(target_url, wait_until="load", timeout=15000)
             await asyncio.sleep(1.5)
             
-            # 🔥 3단 자동 우회 탐색
-            current_url = page.url.lower()
-            if gallery_id.lower() not in current_url:
+            # 🔥 [가장 확실한 생존 판별] 화면에 '게시글 목록'이 실제로 존재하는지 4초간 확인
+            has_posts = False
+            try:
                 if env == "PC":
-                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 정규/마이너 주소 실패. 자동 탐색 시작...")
+                    await page.wait_for_selector("table.gall_list", timeout=4000)
+                else:
+                    await page.wait_for_selector(".gall-list, .gall-detail-lst", timeout=4000)
+                has_posts = True
+            except:
+                has_posts = False
+            
+            # 게시글이 안 보이면? 잘못된 주소(에러 페이지)이므로 무조건 3단 우회 탐색 가동!
+            if not has_posts:
+                if env == "PC":
+                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 빈 갤러리 감지. 우회 탐색 시작...")
                     test_urls = [
                         f"https://gall.dcinside.com/board/lists/?id={gallery_id}",
                         f"https://gall.dcinside.com/mgallery/board/lists/?id={gallery_id}",
@@ -244,11 +274,14 @@ async def task_runner(sem, ctx, env, tgt, queue):
                     for t_url in test_urls:
                         await page.goto(t_url, wait_until="load", timeout=12000)
                         await asyncio.sleep(1.5)
-                        if gallery_id.lower() in page.url.lower():
+                        try:
+                            await page.wait_for_selector("table.gall_list", timeout=3000)
                             print(f"✅ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 올바른 주소 안착 완료!")
                             break
+                        except:
+                            continue
                 elif env == "MO":
-                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 모바일 기본 주소 실패. 자동 탐색 시작...")
+                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 빈 갤러리 감지. 우회 탐색 시작...")
                     test_urls = [
                         f"https://m.dcinside.com/board/{gallery_id}",
                         f"https://m.dcinside.com/mini/{gallery_id}"
@@ -256,9 +289,12 @@ async def task_runner(sem, ctx, env, tgt, queue):
                     for t_url in test_urls:
                         await page.goto(t_url, wait_until="load", timeout=12000)
                         await asyncio.sleep(1.5)
-                        if gallery_id.lower() in page.url.lower():
+                        try:
+                            await page.wait_for_selector(".gall-list, .gall-detail-lst", timeout=3000)
                             print(f"✅ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 올바른 주소 안착 완료!")
                             break
+                        except:
+                            continue
 
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
             
