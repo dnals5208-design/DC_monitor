@@ -3,9 +3,9 @@ name: 디시인사이드 광고 모니터링 자동화
 on:
   workflow_dispatch:
   
-  # 🔥 한국 시간 매일 오전 5시 자동 실행 (UTC 기준 20:00)
+  # 🔥 한국 시간 매일 오전 6시 자동 실행 (UTC 기준 21:00)
   schedule:
-    - cron: '0 20 * * *'
+    - cron: '0 21 * * *'
 
 jobs:
   build:
@@ -32,6 +32,9 @@ jobs:
       run: |
         echo "$GOOGLE_API_KEY" > service_account2020.json
 
-    # 🔥 -u 옵션을 추가하여 4~5분 멈춤 현상 완벽 해결! 즉시 로그 출력!
-    - name: 광고 모니터링 스크립트 실행
-      run: python -u dc_monitor.py
+    # 🔥 A팀과 B팀을 동시에 가동 (& 사용)
+    - name: 광고 모니터링 A, B 그룹 병렬 실행
+      run: |
+        python -u dc_monitor_A.py &
+        python -u dc_monitor_B.py &
+        wait
