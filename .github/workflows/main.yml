@@ -23,13 +23,14 @@ jobs:
     - name: 구글 시트 초기화 (오늘 날짜)
       run: python -u clean_sheet.py
 
-  # 2단계: 청소가 끝나면 컴퓨터 5대가 동시에 켜져서 미친 속도로 긁어옵니다.
+  # 2단계: 청소가 끝나면 컴퓨터 7대가 동시에 켜져서 미친 속도로 긁어옵니다.
   scrape-data:
     needs: clean-sheet
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        chunk: [0, 1, 2, 3, 4] # 🔥 여기가 핵심! 서버 5대 동시 가동
+        # 🔥 여기서 0부터 6까지 총 7대의 서버를 할당합니다!
+        chunk: [0, 1, 2, 3, 4, 5, 6] 
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v4
@@ -45,5 +46,5 @@ jobs:
     - name: 수집 로봇 동시 가동 (서버 번호 ${{ matrix.chunk }})
       env:
         CHUNK_INDEX: ${{ matrix.chunk }}
-        TOTAL_CHUNKS: 5
+        TOTAL_CHUNKS: 7 # 🔥 파이썬에게 전체 서버가 7대라고 알려줍니다.
       run: python -u dc_monitor.py
