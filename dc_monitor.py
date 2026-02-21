@@ -50,7 +50,7 @@ ALL_GALLERIES = [
     {"name": "회계사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cpa", "mo": "https://m.dcinside.com/board/cpa"}
 ]
 
-# 🚀 5대 서버가 자신이 맡은 구역(Chunk)만 가져가게 하는 마법의 식
+# 매트릭스 실행을 위한 청크 설정
 CHUNK_INDEX = int(os.getenv("CHUNK_INDEX", 0))
 TOTAL_CHUNKS = int(os.getenv("TOTAL_CHUNKS", 1))
 
@@ -135,11 +135,27 @@ async def capture_ads(context, page, env, gallery, page_type):
                     raw_pos = await ad.evaluate("n => { let p = n.closest('div'); return p ? p.className : ''; }")
                     txt = await ad.inner_text() or ""
                     
+                    # --- 🚫 강력해진 쓰레기 데이터 필터링 시작 ---
+                    
+                    # 1. 기본 필터 (구글, 정책 등)
                     if any(k in href.lower() for k in ["google", "adsrvr", "criteo", "policy", "useinfo", "#", "javascript"]): continue
                     if "close" in img_src.lower() or "googleactiveview" in raw_pos.lower(): continue
                     if any(w in txt for w in ["이용안내", "이용약관", "개인정보", "광고안내"]): continue
 
+                    # 2. [핵심] 디시인사이드 메인/갤러리 로고 링크 차단 (image_7.png 해결)
+                    stripped_href = href.rstrip('/')
+                    if stripped_href in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com"]: continue
+
+                    # 3. [핵심] 사이트 디자인 요소(아이콘 등) 차단 (image_6.png 해결)
+                    # nstatic 서버의 /images/ 폴더는 광고가 아닌 사이트 자원일 확률이 높음 (단, dcad 광고 폴더는 제외)
+                    if "nstatic.dcinside.com" in img_src and "/images/" in img_src and "/dcad/" not in img_src: continue
+
+                    # --- 필터링 끝 ---
+
                     if any(k in href or k in img_src for k in ["addc.dc", "NetInsight", "nstatic", "toast"]):
+                        # 4. [핵심] 빈 껍데기(null/null) 데이터 최종 방어 (image_5.png 해결)
+                        if not img_src and not txt.strip(): continue
+                        
                         found_ad_in_this_round = True
                         key = img_src or href
                         if key not in seen:
@@ -182,7 +198,7 @@ async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled", "--no-sandbox"])
         pc_ctx, mo_ctx = await browser.new_context(viewport={"width": 1920, "height": 1080}), await browser.new_context(**p.devices['iPhone 13'])
-        sem, queue = asyncio.Semaphore(5), asyncio.Queue() # 서버당 동시 5개 (5서버 총 25개 동시실행)
+        sem, queue = asyncio.Semaphore(5), asyncio.Queue()
         uploader = asyncio.create_task(uploader_worker(queue, ws))
 
         tasks = [task_runner(sem, pc_ctx, "PC", t, queue) for t in TARGET_GALLERIES] + [task_runner(sem, mo_ctx, "MO", t, queue) for t in TARGET_GALLERIES]
