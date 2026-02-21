@@ -2,39 +2,48 @@ name: 디시인사이드 광고 모니터링 자동화
 
 on:
   workflow_dispatch:
-  
-  # 🔥 한국 시간 매일 오전 6시 자동 실행 (UTC 기준 21:00)
   schedule:
-    - cron: '0 21 * * *'
+    - cron: '0 21 * * *' # KST 오전 6시 실행
 
 jobs:
-  build:
+  # 1단계: 1대의 컴퓨터가 먼저 나서서 시트 중복 데이터를 싹 지웁니다.
+  clean-sheet:
     runs-on: ubuntu-latest
-
     steps:
-    - name: 저장소 체크아웃
-      uses: actions/checkout@v3
-
-    - name: 파이썬 세팅
-      uses: actions/setup-python@v4
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v4
       with:
         python-version: '3.11'
+    - run: |
+        python -m pip install --upgrade pip
+        pip install gspread
+    - env:
+        GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      run: echo "$GOOGLE_API_KEY" > service_account2020.json
+    - name: 구글 시트 초기화 (오늘 날짜)
+      run: python -u clean_sheet.py
 
-    - name: 라이브러리 및 Playwright 설치
-      run: |
+  # 2단계: 청소가 끝나면 컴퓨터 5대가 동시에 켜져서 미친 속도로 긁어옵니다.
+  scrape-data:
+    needs: clean-sheet
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        chunk: [0, 1, 2, 3, 4] # 🔥 여기가 핵심! 서버 5대 동시 가동
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         playwright install chromium
-
-    - name: 구글 API 키 생성
-      env:
+    - env:
         GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-      run: |
-        echo "$GOOGLE_API_KEY" > service_account2020.json
-
-    # 🔥 A팀과 B팀을 동시에 가동 (& 사용)
-    - name: 광고 모니터링 A, B 그룹 병렬 실행
-      run: |
-        python -u dc_monitor_A.py &
-        python -u dc_monitor_B.py &
-        wait
+      run: echo "$GOOGLE_API_KEY" > service_account2020.json
+    - name: 수집 로봇 동시 가동 (서버 번호 ${{ matrix.chunk }})
+      env:
+        CHUNK_INDEX: ${{ matrix.chunk }}
+        TOTAL_CHUNKS: 5
+      run: python -u dc_monitor.py
