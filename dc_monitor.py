@@ -49,6 +49,7 @@ ALL_GALLERIES = [
     {"name": "회계사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cpa", "mo": "https://m.dcinside.com/board/cpa"}
 ]
 
+# 🚀 10대 서버 완벽 분배 공식
 CHUNK_INDEX = int(os.getenv("CHUNK_INDEX", 0))
 TOTAL_CHUNKS = int(os.getenv("TOTAL_CHUNKS", 1))
 
@@ -119,7 +120,7 @@ async def capture_ads(context, page, env, gallery, page_type):
     collected, seen = [], set()
     today = datetime.now().strftime("%Y-%m-%d")
     
-    # 🔥 속도 최적화: 시도 횟수(15)와 유효 횟수(7)를 줄여서 빈 갤러리 무한 대기 방지
+    # ⏱️ 대기 무한루프 방지를 위해 시도 횟수 적절히 제한
     valid_refreshes, attempt = 0, 0
     prefix = f"[서버 {CHUNK_INDEX+1}|{env}|{gallery[:4]}|{page_type}]"
     
@@ -128,10 +129,10 @@ async def capture_ads(context, page, env, gallery, page_type):
         current_round = valid_refreshes + 1
         ad_count_in_round = 0
         try:
-            await page.reload(wait_until="domcontentloaded", timeout=12000)
-            await asyncio.sleep(1.5)
+            # 🔥 지연 로딩 방어: 페이지 전체 로딩 대기 후 스크롤을 3단계로 내림
+            await page.reload(wait_until="load", timeout=15000)
+            await asyncio.sleep(2.5)
             
-            # 🔥 지연 로딩 방어: 스크롤을 3단계로 쪼개어 내려 숨은 배너들을 모두 기상시킴
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 3);")
             await asyncio.sleep(0.5)
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 1.5);")
@@ -146,15 +147,16 @@ async def capture_ads(context, page, env, gallery, page_type):
                     href = await ad.get_attribute("href") or ""
                     clean_href = href.strip().lower()
                     
-                    # 🚫 1. 링크 껍데기(__CLICK__, null, 빈 링크) 완벽 차단
+                    # 🚫 1. 쓰레기 링크 1차 차단
                     if not clean_href or clean_href == "#" or "javascript" in clean_href: continue
                     if "__click__" in clean_href or "null" in clean_href: continue
                     
-                    # 🚫 2. 디시 내부 UI 버튼(로고, 마이너갤러리, 실시간베스트 등) 차단
+                    # 🚫 2. 디시 내부 구조 링크 차단
                     stripped_href = clean_href.rstrip('/')
                     if stripped_href in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m"]: continue
                     if any(x in clean_href for x in ["/board/dcbest", "policy", "useinfo", "gall.dcinside.com/mini"]): continue
 
+                    # 🖼️ 숨은 이미지 추출 완벽 분석
                     img_src = await ad.evaluate("""n => {
                         let img = n.querySelector('img');
                         if (img) {
@@ -181,19 +183,18 @@ async def capture_ads(context, page, env, gallery, page_type):
                     clean_img = img_src.strip().lower()
                     clean_txt = txt.strip()
                     
-                    # 🚫 3. 블랙리스트: 디시 디자인 아이콘 및 껍데기 이미지 완벽 소각
+                    # 🚫 3. 디자인 UI 요소 원천 차단
                     junk_images = ["noimage", "tit_", "sp_", "logo", "g_img", "blank", "/images/"]
                     if any(j in clean_img for j in junk_images) and "/ad/" not in clean_img: continue
                     if "close" in clean_img or "googleactiveview" in str(raw_pos).lower(): continue
                     
-                    # 🚫 4. 텍스트 블랙리스트: UI 텍스트 차단
+                    # 🚫 4. 텍스트 UI 원천 차단
                     junk_texts = ["갤러리", "마이너 갤러리", "실시간 베스트", "null", "dcinside.com"]
                     if clean_txt in junk_texts: continue
                     if "이용안내" in clean_txt or "개인정보" in clean_txt: continue
 
-                    # ✅ 5. 최종 광고 판별
+                    # ✅ 5. 최종 광고 여부 확인
                     if any(k in href or k in img_src for k in ["addc.dc", "NetInsight", "nstatic", "toast"]):
-                        # 속이 텅 빈 유령 데이터 방어
                         if not clean_img and not clean_txt: continue
                         
                         found_ad_in_this_round = True
@@ -203,7 +204,7 @@ async def capture_ads(context, page, env, gallery, page_type):
                             ad_count_in_round += 1
                             final_url = await get_final_landing_url(context, href)
                             
-                            # 최종 URL 재확인 (여기서 한 번 더 null과 디시 메인 링크 걸러냄)
+                            # 랜딩 URL 최종 검증 (디시 메인으로 튕기면 버림)
                             clean_final = final_url.rstrip('/').lower() if final_url else ""
                             if "null" in clean_final or "__click__" in clean_final: continue
                             if clean_final in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m"]: continue
@@ -223,21 +224,53 @@ async def task_runner(sem, ctx, env, tgt, queue):
         page = await ctx.new_page()
         await page.route("**/*", block_resources)
         try:
-            await page.goto(tgt['pc'] if env=="PC" else tgt['mo'], wait_until="domcontentloaded", timeout=12000)
+            target_url = tgt['pc'] if env=="PC" else tgt['mo']
+            await page.goto(target_url, wait_until="load", timeout=15000)
             await asyncio.sleep(1.5)
+            
+            # 🔥 [완벽 우회 시스템] 튕기면 정규 -> 마이너 -> 미니 순서로 끝까지 추적!
+            current_url = page.url.rstrip('/').lower()
+            bounce_urls = ["https://gall.dcinside.com", "http://gall.dcinside.com", "https://www.dcinside.com", "https://m.dcinside.com"]
+            
+            if env == "PC" and current_url in bounce_urls:
+                print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 정규 갤러리 아님. 마이너 갤러리로 1차 우회 시도...")
+                target_url = target_url.replace("/board/lists/?", "/mgallery/board/lists/?")
+                await page.goto(target_url, wait_until="load", timeout=15000)
+                await asyncio.sleep(1.5)
+                
+                # 마이너에서도 튕기면 미니 갤러리로 2차 우회
+                current_url = page.url.rstrip('/').lower()
+                if current_url in bounce_urls:
+                    print(f"🚨 [서버 {CHUNK_INDEX+1}|{tgt['name']}] 마이너 갤러리도 아님. 미니 갤러리로 최종 우회 시도...")
+                    target_url = target_url.replace("/mgallery/board/lists/?", "/mini/board/lists/?")
+                    await page.goto(target_url, wait_until="load", timeout=15000)
+                    await asyncio.sleep(1.5)
+            
+            elif env == "MO" and current_url in bounce_urls:
+                # 모바일 환경에서 튕길 경우 미니 갤러리 구조로 치환
+                print(f"🚨 [서버 {CHUNK_INDEX+1}|{tgt['name']}] 모바일 메인 튕김. 미니 갤러리로 우회 시도...")
+                target_url = target_url.replace("/board/", "/mini/")
+                await page.goto(target_url, wait_until="load", timeout=15000)
+                await asyncio.sleep(1.5)
+
+            # 리스트 광고 수집
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
             
+            # 본문 진입
             post = page.locator("tr.us-post:not(.notice) td.gall_tit > a:not(.reply_numbox)").first if env=="PC" else page.locator("ul.gall-detail-lst li:not(.notice) .gall-detail-lnktit a").first
             if await post.count() > 0:
                 await post.click()
-                await asyncio.sleep(2)
+                await asyncio.sleep(2.5)
                 for item in await capture_ads(ctx, page, env, tgt['name'], "본문"): await queue.put(item)
         except: pass
         finally: await page.close()
 
 async def main():
     if not TARGET_GALLERIES: return
-    print(f"🔥 [서버 {CHUNK_INDEX+1}] 가동! 할당된 갤러리 {len(TARGET_GALLERIES)}개 수집 시작...")
+    
+    # 🔥 할당된 갤러리 명단 출력 (터미널에서 한눈에 확인 가능)
+    gallery_names = [g['name'] for g in TARGET_GALLERIES]
+    print(f"🔥 [서버 {CHUNK_INDEX+1}] 가동! 할당된 갤러리 {len(TARGET_GALLERIES)}개: {', '.join(gallery_names)}")
     
     gc = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
     ws = gc.open_by_url(SHEET_URL).get_worksheet(0)
@@ -245,12 +278,14 @@ async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled", "--no-sandbox"])
         pc_ctx, mo_ctx = await browser.new_context(viewport={"width": 1920, "height": 1080}), await browser.new_context(**p.devices['iPhone 13'])
+        
         sem, queue = asyncio.Semaphore(5), asyncio.Queue()
         uploader = asyncio.create_task(uploader_worker(queue, ws))
 
         tasks = [task_runner(sem, pc_ctx, "PC", t, queue) for t in TARGET_GALLERIES] + [task_runner(sem, mo_ctx, "MO", t, queue) for t in TARGET_GALLERIES]
         await asyncio.gather(*tasks)
         await browser.close()
+        
         await queue.put(None)
         await uploader
         print(f"🎉 [서버 {CHUNK_INDEX+1}] 담당 구역 완벽하게 수집 종료!")
