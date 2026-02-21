@@ -145,7 +145,6 @@ async def capture_ads(context, page, env, gallery, page_type):
             try:
                 for ad in await frame.locator("a").all():
                     raw_href = await ad.evaluate("""n => {
-                        if (n.href && !n.href.includes('__CLICK__') && !n.href.includes('__click__') && !n.href.includes('null')) return n.href;
                         let oc = n.getAttribute('onclick');
                         if (oc) {
                             let m = oc.match(/['"](http[^'"]+)['"]/);
@@ -166,13 +165,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                         if (bg && bg !== 'none' && bg.includes('url')) {
                             return bg.replace(/^url\\(['"]?/, '').replace(/['"]?\\)$/, '');
                         }
-                        let child = n.querySelector('div, span');
-                        if (child) {
-                            let cbg = window.getComputedStyle(child).backgroundImage;
-                            if (cbg && cbg !== 'none' && cbg.includes('url')) {
-                                return cbg.replace(/^url\\(['"]?/, '').replace(/['"]?\\)$/, '');
-                            }
-                        }
                         return '';
                     }""")
                     
@@ -181,27 +173,38 @@ async def capture_ads(context, page, env, gallery, page_type):
                     
                     clean_img = img_src.strip().lower()
                     clean_txt = txt.strip()
-
-                    # 🚫 1. 텍스트 세탁 및 dcinside 자체 텍스트 무효화
+                    
+                    # 🚫 1. 기본 빈 껍데기 체크
+                    if not clean_href and not clean_img and not clean_txt: continue
+                    
+                    # 🚫 2. 텍스트 블랙리스트 (마이너 갤러리, 실시간 베스트 등 원천 차단)
                     if clean_txt.lower() == "null": clean_txt = ""
                     if "dcinside.com" in clean_txt.lower(): clean_txt = ""
-                    
-                    # 🚫 2. 강력한 쓰레기 블랙리스트 (텍스트) - "광고안내", "갤러리" 글자 원천 차단
-                    junk_texts = ["갤러리", "마이너 갤러리", "미니 갤러리", "실시간 베스트", "광고안내", "이용안내", "개인정보", "운영자"]
-                    if any(j in clean_txt for j in junk_texts) or clean_txt.endswith("갤러리") or clean_txt == "광고안내": 
+                    junk_texts = ["갤러리", "실시간 베스트", "광고안내", "이용안내", "개인정보", "운영자"]
+                    if any(j in clean_txt for j in junk_texts) or clean_txt == "갤러리":
                         continue
-
-                    # 🚫 3. 강력한 쓰레기 블랙리스트 (이미지) - 회색 g로고, 갤러리 버튼, dcad 배너 완벽 방어
+                        
+                    # 🚫 3. 이미지 블랙리스트 (g로고, 디시 로고 완벽 차단)
                     junk_images = ["noimage", "tit_", "sp_", "logo", "g_img", "blank", "/images/", "/dcad/"]
-                    if any(j in clean_img for j in junk_images): 
+                    if any(j in clean_img for j in junk_images):
                         continue
-
-                    # 🚫 4. 사용자 요청: 구글, 크리테오 등 외부 네트워크 배너 철저히 버리기
+                        
+                    # 🚫 4. 구글, 크리테오 등 외부 네트워크 차단
                     external_ad_networks = ["google", "adsrvr", "criteo", "taboola", "doubleclick", "adnxs", "smartadserver"]
                     if any(k in clean_href for k in external_ad_networks): 
                         continue
+                    
+                    internal_urls = [
+                        "https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", 
+                        "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini",
+                        "https://www.dcinside.com/", "https://gall.dcinside.com/", "https://m.dcinside.com/"
+                    ]
+                    if clean_href in internal_urls:
+                        continue
+                    if "board/dcbest" in clean_href or "board/lists" in clean_href:
+                        continue
 
-                    # ✅ 5. 오직 진짜 '디시 직접 광고'만 허용하는 화이트리스트
+                    # ✅ 5. 화이트리스트 (반드시 이 조건을 통과해야만 진짜 광고로 인정)
                     is_real_ad = False
                     if "addc.dc" in clean_href or "netinsight" in clean_href or "toast" in clean_href:
                         is_real_ad = True
@@ -210,10 +213,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                         
                     if not is_real_ad: 
                         continue
-                        
-                    # 🚫 6. 빈 껍데기 유령 데이터 최종 차단
-                    if not clean_img and not clean_txt: 
-                        continue
 
                     found_ad_in_this_round = True
                     key = clean_img or raw_href
@@ -221,18 +220,22 @@ async def capture_ads(context, page, env, gallery, page_type):
                         seen.add(key)
                         ad_count_in_round += 1
                         
-                        final_url = await get_final_landing_url(context, raw_href) if not raw_href.startswith("javascript") else raw_href
+                        # 최종 URL 확인
+                        final_url = ""
+                        if not raw_href.startswith("javascript") and raw_href != "#":
+                            final_url = await get_final_landing_url(context, raw_href)
+                        else:
+                            final_url = raw_href
+                            
                         clean_final = final_url.strip()
                         
-                        # 🧼 __CLICK__ 및 껍데기 URL 깔끔하게 세탁하기
-                        clean_final = clean_final.replace("__CLICK__", "").replace("__click__", "")
-                        
-                        if not clean_final or clean_final.lower() in ["null", "#", "http://null", "https://null"]:
-                            clean_final = "랜딩 URL 숨김 (클릭 이벤트)"
+                        # 🔥 6. 디시 메인 튕김 링크 최종 차단 (로고 이미지 수집 방어)
+                        if clean_final.rstrip('/').lower() in internal_urls:
+                            continue 
                             
-                        # 디시 내부 링크로 튕기는 건 숨김 처리
-                        if any(clean_final.rstrip('/').lower() == b for b in ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini"]):
-                            clean_final = "랜딩 URL 숨김 (내부 보안)"
+                        # 🧼 7. __CLICK__ 및 껍데기 URL 깔끔하게 세탁
+                        if "click" in clean_final.lower() or "null" in clean_final.lower() or not clean_final or clean_final == "#":
+                            clean_final = "랜딩 URL 숨김"
                         
                         pos = get_korean_position(env, page_type, raw_pos, clean_img)
                         text_val = clean_txt if clean_txt else "이미지 배너"
