@@ -50,13 +50,21 @@ ALL_GALLERIES = [
     {"name": "회계사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cpa", "mo": "https://m.dcinside.com/board/cpa"}
 ]
 
-# 매트릭스 실행을 위한 청크 설정
+# 🚀 7대 서버에 남는 갤러리 없이 골고루 나누어주는 마법의 식
 CHUNK_INDEX = int(os.getenv("CHUNK_INDEX", 0))
 TOTAL_CHUNKS = int(os.getenv("TOTAL_CHUNKS", 1))
 
-chunk_size = (len(ALL_GALLERIES) + TOTAL_CHUNKS - 1) // TOTAL_CHUNKS
-start_idx = CHUNK_INDEX * chunk_size
-end_idx = min(start_idx + chunk_size, len(ALL_GALLERIES))
+base_size = len(ALL_GALLERIES) // TOTAL_CHUNKS  # 기본 할당량 (37 // 7 = 5개)
+remainder = len(ALL_GALLERIES) % TOTAL_CHUNKS   # 남는 갤러리 (37 % 7 = 2개)
+
+# 앞쪽 서버부터 남는 갤러리를 1개씩(+1) 더 얹어줍니다. (2대는 6개, 5대는 5개)
+if CHUNK_INDEX < remainder:
+    start_idx = CHUNK_INDEX * (base_size + 1)
+    end_idx = start_idx + (base_size + 1)
+else:
+    start_idx = remainder * (base_size + 1) + (CHUNK_INDEX - remainder) * base_size
+    end_idx = start_idx + base_size
+
 TARGET_GALLERIES = ALL_GALLERIES[start_idx:end_idx]
 
 def safe_batch_upload(ws, data_chunk):
