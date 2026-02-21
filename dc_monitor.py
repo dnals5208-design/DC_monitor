@@ -9,7 +9,7 @@ from datetime import datetime
 SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
-# 🔥 37개 갤러리 완벽 분류 (정규 22개 / 마이너 15개)
+# 🔥 37개 갤러리 100% 정답 주소 완료
 ALL_GALLERIES = [
     # 🏢 [정규 갤러리]
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
@@ -25,7 +25,7 @@ ALL_GALLERIES = [
     {"name": "영어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=English", "mo": "https://m.dcinside.com/board/English"},
     {"name": "영어회화갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=englishspeech", "mo": "https://m.dcinside.com/board/englishspeech"},
     {"name": "일어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=japanese", "mo": "https://m.dcinside.com/board/japanese"},
-    {"name": "임용고시갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=imyoung", "mo": "https://m.dcinside.com/board/imyoung"},
+    {"name": "임용갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=imyoung", "mo": "https://m.dcinside.com/board/imyoung"},
     {"name": "자격증갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=coq", "mo": "https://m.dcinside.com/board/coq"},
     {"name": "중국어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=chinese", "mo": "https://m.dcinside.com/board/chinese"},
     {"name": "토익갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=toeic", "mo": "https://m.dcinside.com/board/toeic"},
@@ -34,6 +34,7 @@ ALL_GALLERIES = [
     {"name": "학점은행제갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=acbs", "mo": "https://m.dcinside.com/board/acbs"},
     {"name": "해양경찰갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=kcg", "mo": "https://m.dcinside.com/board/kcg"},
     {"name": "회계사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cpa", "mo": "https://m.dcinside.com/board/cpa"},
+    {"name": "러시아갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=russia", "mo": "https://m.dcinside.com/board/russia"},
 
     # ⛺ [마이너 갤러리]
     {"name": "HSK갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=hsk123456", "mo": "https://m.dcinside.com/board/hsk123456"},
@@ -41,7 +42,6 @@ ALL_GALLERIES = [
     {"name": "공인중개사갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=bokdukbang", "mo": "https://m.dcinside.com/board/bokdukbang"},
     {"name": "군무원갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=soider", "mo": "https://m.dcinside.com/board/soider"},
     {"name": "듀오링고갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=duolingo", "mo": "https://m.dcinside.com/board/duolingo"},
-    {"name": "러시아어갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=russiangall", "mo": "https://m.dcinside.com/board/russiangall"},
     {"name": "마이스터고갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=meister", "mo": "https://m.dcinside.com/board/meister"},
     {"name": "오픽갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=opic", "mo": "https://m.dcinside.com/board/opic"},
     {"name": "유학시험갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=eju", "mo": "https://m.dcinside.com/board/eju"},
@@ -123,10 +123,11 @@ async def capture_ads(context, page, env, gallery, page_type):
     collected, seen = [], set()
     today = datetime.now().strftime("%Y-%m-%d")
     
+    # 🔥 무의미한 대기 최소화: 최대 6번만 시도하고 쿨하게 패스!
     valid_refreshes, attempt = 0, 0
     prefix = f"[서버 {CHUNK_INDEX+1}|{env}|{gallery[:4]}|{page_type}]"
     
-    while valid_refreshes < 5 and attempt < 10:
+    while valid_refreshes < 4 and attempt < 6:
         attempt += 1; found_ad_in_this_round = False
         current_round = valid_refreshes + 1
         ad_count_in_round = 0
@@ -238,6 +239,10 @@ async def task_runner(sem, ctx, env, tgt, queue):
     async with sem:
         await asyncio.sleep(random.uniform(0, 1.5))
         page = await ctx.new_page()
+        
+        # 🔥 ALERT(팝업) 창 때문에 무한 대기하는 현상 완벽 방지
+        page.on("dialog", lambda dialog: asyncio.create_task(dialog.accept()))
+        
         await page.route("**/*", block_resources)
         try:
             target_url = tgt['pc'] if env=="PC" else tgt['mo']
@@ -251,21 +256,18 @@ async def task_runner(sem, ctx, env, tgt, queue):
             await page.goto(target_url, wait_until="load", timeout=15000)
             await asyncio.sleep(1.5)
             
-            # 🔥 [가장 확실한 생존 판별] 화면에 '게시글 목록'이 실제로 존재하는지 4초간 확인
-            has_posts = False
-            try:
-                if env == "PC":
-                    await page.wait_for_selector("table.gall_list", timeout=4000)
-                else:
-                    await page.wait_for_selector(".gall-list, .gall-detail-lst", timeout=4000)
-                has_posts = True
-            except:
-                has_posts = False
+            # 🔥 [혁명적 속도 개선] 4초 대기(wait_for_selector) 폐기! 
+            # 타이틀 이름으로 0.1초 만에 즉각 판별하여 멀쩡한 갤러리 오인 방지
+            page_title = await page.title()
+            current_url = page.url.lower()
+            keyword = tgt['name'].replace("갤러리", "").strip()
             
-            # 게시글이 안 보이면? 잘못된 주소(에러 페이지)이므로 무조건 3단 우회 탐색 가동!
-            if not has_posts:
+            bounce_urls = ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini"]
+            
+            # 갤러리 이름이 타이틀에 안보이거나 메인으로 튕기면 100% 주소 오류!
+            if keyword not in page_title.replace(" ", "") or current_url in bounce_urls:
                 if env == "PC":
-                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 빈 갤러리 감지. 우회 탐색 시작...")
+                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 잘못된 주소 감지. 스피드 우회 탐색 시작...")
                     test_urls = [
                         f"https://gall.dcinside.com/board/lists/?id={gallery_id}",
                         f"https://gall.dcinside.com/mgallery/board/lists/?id={gallery_id}",
@@ -273,28 +275,24 @@ async def task_runner(sem, ctx, env, tgt, queue):
                     ]
                     for t_url in test_urls:
                         await page.goto(t_url, wait_until="load", timeout=12000)
-                        await asyncio.sleep(1.5)
-                        try:
-                            await page.wait_for_selector("table.gall_list", timeout=3000)
+                        await asyncio.sleep(1)
+                        temp_title = await page.title()
+                        if keyword in temp_title.replace(" ", ""):
                             print(f"✅ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 올바른 주소 안착 완료!")
                             break
-                        except:
-                            continue
                 elif env == "MO":
-                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 빈 갤러리 감지. 우회 탐색 시작...")
+                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 잘못된 주소 감지. 스피드 우회 탐색 시작...")
                     test_urls = [
                         f"https://m.dcinside.com/board/{gallery_id}",
                         f"https://m.dcinside.com/mini/{gallery_id}"
                     ]
                     for t_url in test_urls:
                         await page.goto(t_url, wait_until="load", timeout=12000)
-                        await asyncio.sleep(1.5)
-                        try:
-                            await page.wait_for_selector(".gall-list, .gall-detail-lst", timeout=3000)
+                        await asyncio.sleep(1)
+                        temp_title = await page.title()
+                        if keyword in temp_title.replace(" ", ""):
                             print(f"✅ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 올바른 주소 안착 완료!")
                             break
-                        except:
-                            continue
 
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
             
