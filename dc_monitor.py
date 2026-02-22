@@ -9,7 +9,6 @@ from datetime import datetime, timedelta, timezone
 SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
-# 🔥 사용자님이 잡아주신 100% 완벽한 정답 갤러리 리스트 유지
 ALL_GALLERIES = [
     # 🏢 [정규 갤러리]
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
@@ -146,6 +145,11 @@ async def capture_ads(context, page, env, gallery, page_type):
         for frame in page.frames:
             try:
                 for ad in await frame.locator("a").all():
+                    # ☢️ [X 표시 완벽 차단 1] 클릭 주소가 #으로 끝나는 닫기 버튼은 아예 무시
+                    raw_href_attr = await ad.get_attribute("href") or ""
+                    if raw_href_attr.strip() == "#" or raw_href_attr.strip().endswith("#"):
+                        continue
+
                     raw_href = await ad.evaluate("""n => {
                         if (n.href && !n.href.includes('__CLICK__') && !n.href.includes('__click__') && !n.href.includes('null')) return n.href;
                         let oc = n.getAttribute('onclick');
@@ -155,6 +159,12 @@ async def capture_ads(context, page, env, gallery, page_type):
                         }
                         return n.href || '';
                     }""")
+                    
+                    clean_href = raw_href.strip().lower()
+                    
+                    # ☢️ [X 표시 완벽 차단 2] 자바스크립트 우회로 나온 주소도 #으로 끝나면 차단
+                    if clean_href == "#" or clean_href.endswith("#"):
+                        continue
                     
                     img_src = await ad.evaluate("""n => {
                         let img = n.querySelector('img');
@@ -176,15 +186,10 @@ async def capture_ads(context, page, env, gallery, page_type):
                     raw_pos = await ad.evaluate("n => { let p = n.closest('div'); return p ? p.className : ''; }")
                     txt = await ad.inner_text() or ""
                     
-                    clean_href = raw_href.strip().lower()
                     clean_img = img_src.strip() 
                     clean_txt = txt.strip()
                     
-                    # 🧼 가짜 텍스트 세탁 (이것 때문에 빈 이미지 배너가 통과했었음)
-                    if clean_txt.lower() in ["null", "dcinside.com", "이미지 배너", ""]:
-                        clean_txt = ""
-
-                    # 🧼 가짜 이미지 세탁 (Base64, 상대경로 등은 이미지 없는 것으로 간주)
+                    # 🧼 이미지 주소 정리
                     if clean_img:
                         if clean_img.startswith("data:image") or clean_img.startswith("blob:"):
                             clean_img = ""
@@ -192,23 +197,30 @@ async def capture_ads(context, page, env, gallery, page_type):
                             clean_img = "https:" + clean_img
                         elif not clean_img.startswith("http"):
                             clean_img = ""
+                    
+                    # 너무 짧은 비정상 이미지 주소는 공백 처리
+                    if len(clean_img) < 10:
+                        clean_img = ""
 
-                    # ☢️ [초강력 방어 1] 이미지도 없고 텍스트도 없으면 "즉시 사살"
-                    if not clean_img and not clean_txt: continue
-                    # ☢️ [초강력 방어 2] 이미지가 없는데 텍스트가 너무 짧으면(의미 없으면) 사살
-                    if not clean_img and len(clean_txt) < 3: continue
+                    # 🧼 의미 없는 텍스트 정리 (이게 있어야 빈 배너가 걸러짐)
+                    if clean_txt.lower() in ["null", "dcinside.com", "이미지 배너", "광고안내", ""]:
+                        clean_txt = ""
 
-                    # 🚫 텍스트 블랙리스트 (광고안내 원천 차단)
+                    # ☢️ [빈 배너 완벽 차단] 이미지도 없고 텍스트도 없으면 여기서 즉시 삭제!
+                    if not clean_img and not clean_txt: 
+                        continue
+
+                    # 🚫 텍스트 블랙리스트
                     junk_texts = ["갤러리", "실시간 베스트", "광고안내", "이용안내", "개인정보", "운영자"]
                     if any(j in clean_txt for j in junk_texts) or clean_txt == "갤러리" or clean_txt == "광고안내":
                         continue
                         
-                    # 🚫 URL 블랙리스트 (내부 튕김, 엑스박스 버튼 차단)
+                    # 🚫 URL 블랙리스트
                     junk_hrefs = ["/dcad/", "/board/lists", "/mini/board/lists", "gall.dcinside.com/m"]
-                    if any(j in clean_href for j in junk_hrefs) or clean_href.endswith("#"):
+                    if any(j in clean_href for j in junk_hrefs):
                         continue
 
-                    # 🚫 이미지 블랙리스트 (X자 버튼, 땜빵 배너, g로고 차단)
+                    # 🚫 이미지 블랙리스트
                     junk_images = [
                         "noimage", "tit_", "sp_", "logo", "g_img", "blank", "/images/", "/dcad/",
                         "traffic_", "150106_traffic", "default_banner", "icon", "dummy", "x_btn", "close", "btn_ad_close"
@@ -216,12 +228,12 @@ async def capture_ads(context, page, env, gallery, page_type):
                     if clean_img and any(j in clean_img.lower() for j in junk_images):
                         continue
                         
-                    # 🚫 외부 광고 네트워크 차단
+                    # 🚫 외부 광고 차단
                     external_ad_networks = ["google", "adsrvr", "criteo", "taboola", "doubleclick", "adnxs", "smartadserver"]
                     if any(k in clean_href for k in external_ad_networks): 
                         continue
                     
-                    # ✅ 화이트리스트 (반드시 이 조건을 통과해야만 진짜 디시 광고로 인정)
+                    # ✅ 화이트리스트 검증
                     is_real_ad = False
                     if "addc.dc" in clean_href or "netinsight" in clean_href or "toast" in clean_href:
                         is_real_ad = True
@@ -245,13 +257,12 @@ async def capture_ads(context, page, env, gallery, page_type):
                             
                         clean_final = final_url.strip()
                         
-                        # ☢️ [초강력 방어 3] 최종 랜딩 URL이 내부 게시판으로 튕기거나 #으로 끝나면 가짜 광고(엑스박스)이므로 사살
-                        if "/board/" in clean_final.lower() and clean_final.endswith("#"):
-                            continue
-                        if "dcinside.com/board/lists" in clean_final.lower() or "dcinside.com/mgallery/board/lists" in clean_final.lower():
-                            continue
+                        # ☢️ [X 표시 완벽 차단 3] 최종 추출된 랜딩 링크가 또 #으로 끝나면 사살
+                        internal_domains = ["dcinside.com/board", "dcinside.com/mgallery", "dcinside.com/mini"]
+                        if any(d in clean_final.lower() for d in internal_domains) and (clean_final.endswith("#") or "lists" in clean_final.lower()):
+                            continue 
                             
-                        # 🧼 __CLICK__ 및 껍데기 세탁
+                        # 🧼 데이터 정리
                         clean_final = clean_final.replace("__CLICK__", "").replace("__click__", "")
                         if not clean_final or clean_final.lower() in ["null", "#", "http://null", "https://null"]:
                             clean_final = "랜딩 URL 없음 (클릭 전용)"
@@ -261,7 +272,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                         has_img = bool(clean_img)
                         pos = get_korean_position(env, page_type, raw_pos, has_img)
                         
-                        # 완벽한 텍스트 네이밍 (가짜 '이미지 배너' 텍스트 완전 근절)
                         if has_img and not clean_txt:
                             text_val = "이미지 배너"
                         elif not has_img and clean_txt:
