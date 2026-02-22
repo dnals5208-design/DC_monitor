@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
-# 🔥 100% 완벽한 정답 주소 리스트 유지
+# 🔥 사용자님이 직접 찾아주신 100% 완벽한 정답 주소 리스트 탑재!
 ALL_GALLERIES = [
     # 🏢 [정규 갤러리]
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
@@ -91,9 +91,9 @@ async def uploader_worker(queue, ws):
     if buffer:
         await asyncio.to_thread(safe_batch_upload, ws, buffer)
 
-def get_korean_position(env, page_type, raw_pos, img_src):
+def get_korean_position(env, page_type, raw_pos, is_image):
     raw = str(raw_pos).lower()
-    if not img_src: return "텍스트배너"
+    if not is_image: return "텍스트배너"
     if "icon" in raw or "float" in raw or "pop-layer" in raw: return "아이콘배너"
     if env == "PC":
         if page_type == "본문": return "하단배너" if "bottom" in raw or "btm" in raw else "게시글배너"
@@ -122,7 +122,6 @@ async def block_resources(route):
 async def capture_ads(context, page, env, gallery, page_type):
     collected, seen = [], set()
     
-    # 🔥 [핵심 패치] 한국 시간(KST) 강제 적용!
     KST = timezone(timedelta(hours=9))
     today = datetime.now(KST).strftime("%Y-%m-%d")
     
@@ -148,6 +147,7 @@ async def capture_ads(context, page, env, gallery, page_type):
             try:
                 for ad in await frame.locator("a").all():
                     raw_href = await ad.evaluate("""n => {
+                        if (n.href && !n.href.includes('__CLICK__') && !n.href.includes('__click__') && !n.href.includes('null')) return n.href;
                         let oc = n.getAttribute('onclick');
                         if (oc) {
                             let m = oc.match(/['"](http[^'"]+)['"]/);
@@ -156,17 +156,20 @@ async def capture_ads(context, page, env, gallery, page_type):
                         return n.href || '';
                     }""")
                     
-                    clean_href = raw_href.strip().lower()
-                    
+                    # 🔥 [강화] 이미지 추출 로직 (iframe 내부 배경까지 샅샅이 뒤짐)
                     img_src = await ad.evaluate("""n => {
                         let img = n.querySelector('img');
                         if (img) {
-                            if (img.src && !img.src.includes('data:image')) return img.src;
-                            if (img.getAttribute('data-src')) return img.getAttribute('data-src');
+                            let src = img.src || img.getAttribute('data-src') || img.getAttribute('data-original');
+                            if (src && !src.includes('data:image')) return src;
                         }
-                        let bg = window.getComputedStyle(n).backgroundImage;
-                        if (bg && bg !== 'none' && bg.includes('url')) {
-                            return bg.replace(/^url\\(['"]?/, '').replace(/['"]?\\)$/, '');
+                        let children = n.querySelectorAll('*');
+                        for (let child of children) {
+                            let bg = window.getComputedStyle(child).backgroundImage;
+                            if (bg && bg !== 'none' && bg.includes('url')) {
+                                let url = bg.replace(/^url\\(['"]?/, '').replace(/['"]?\\)$/, '');
+                                if (!url.includes('data:image')) return url;
+                            }
                         }
                         return '';
                     }""")
@@ -174,45 +177,56 @@ async def capture_ads(context, page, env, gallery, page_type):
                     raw_pos = await ad.evaluate("n => { let p = n.closest('div'); return p ? p.className : ''; }")
                     txt = await ad.inner_text() or ""
                     
-                    clean_img = img_src.strip().lower()
+                    clean_href = raw_href.strip().lower()
+                    clean_img = img_src.strip() # 원본 대소문자 유지
                     clean_txt = txt.strip()
+                    clean_img_lower = clean_img.lower()
                     
-                    if not clean_href and not clean_img and not clean_txt: continue
+                    # 베이스64 이미지 방어
+                    if clean_img_lower.startswith("data:image"):
+                        clean_img = ""
+                        clean_img_lower = ""
+
+                    # 🚫 1. [초강력 방어] 둘 다 빈 껍데기면 무조건 즉시 버림!
+                    if not clean_img and not clean_txt: continue
                     
-                    if clean_txt.lower() == "null": clean_txt = ""
-                    if "dcinside.com" in clean_txt.lower(): clean_txt = ""
+                    # 🚫 2. 텍스트 블랙리스트 (광고안내 원천 차단)
+                    if clean_txt.lower() == "null" or "dcinside.com" in clean_txt.lower(): 
+                        clean_txt = ""
                     junk_texts = ["갤러리", "실시간 베스트", "광고안내", "이용안내", "개인정보", "운영자"]
                     if any(j in clean_txt for j in junk_texts) or clean_txt == "갤러리":
                         continue
                         
+                    # 🚫 3. URL 블랙리스트 (내부 메뉴 링크 차단)
+                    junk_hrefs = ["/dcad/", "/board/lists", "/mini/board/lists", "gall.dcinside.com/m"]
+                    if any(j in clean_href for j in junk_hrefs):
+                        continue
+
+                    # 🚫 4. 이미지 블랙리스트 (X자 더미, 옛날 트래픽 배너, g로고 차단)
                     junk_images = [
                         "noimage", "tit_", "sp_", "logo", "g_img", "blank", "/images/", "/dcad/",
-                        "traffic_", "150106_traffic", "default_banner", "icon"
+                        "traffic_", "150106_traffic", "default_banner", "icon", "dummy", "x_btn", "close"
                     ]
-                    if any(j in clean_img for j in junk_images):
+                    if any(j in clean_img_lower for j in junk_images):
                         continue
                         
+                    # 🚫 5. 구글, 크리테오 등 외부 네트워크 차단
                     external_ad_networks = ["google", "adsrvr", "criteo", "taboola", "doubleclick", "adnxs", "smartadserver"]
                     if any(k in clean_href for k in external_ad_networks): 
                         continue
                     
-                    internal_urls = [
-                        "https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", 
-                        "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini",
-                        "https://www.dcinside.com/", "https://gall.dcinside.com/", "https://m.dcinside.com/"
-                    ]
-                    if clean_href in internal_urls:
-                        continue
-                    if "board/dcbest" in clean_href or "board/lists" in clean_href:
-                        continue
-
+                    # ✅ 6. 화이트리스트 (반드시 이 조건을 통과해야만 진짜 광고로 인정)
                     is_real_ad = False
                     if "addc.dc" in clean_href or "netinsight" in clean_href or "toast" in clean_href:
                         is_real_ad = True
-                    elif "/ad/" in clean_img and "traffic_" not in clean_img and "/dcad/" not in clean_img:
+                    elif "/ad/" in clean_img_lower and "traffic_" not in clean_img_lower and "/dcad/" not in clean_img_lower:
                         is_real_ad = True
                         
                     if not is_real_ad: 
+                        continue
+                        
+                    # 🚫 7. 화이트리스트 통과 후 필터링에 의해 텍스트/이미지가 모두 지워졌다면 최종 폐기
+                    if not clean_img and not clean_txt:
                         continue
 
                     found_ad_in_this_round = True
@@ -222,25 +236,39 @@ async def capture_ads(context, page, env, gallery, page_type):
                         ad_count_in_round += 1
                         
                         final_url = ""
-                        if not raw_href.startswith("javascript") and raw_href != "#" and raw_href != "__click__":
+                        if not raw_href.startswith("javascript") and raw_href != "#" and raw_href.lower() != "__click__":
                             final_url = await get_final_landing_url(context, raw_href)
                         else:
                             final_url = raw_href
                             
                         clean_final = final_url.strip()
                         
-                        if clean_final.rstrip('/').lower() in internal_urls:
+                        # 🔥 8. 디시 메인 튕김 링크 및 자기 자신 게시판 복귀 링크(X자 이미지 방어) 최종 차단
+                        internal_domains = ["dcinside.com/board", "dcinside.com/mgallery", "dcinside.com/mini"]
+                        if any(d in clean_final.lower() for d in internal_domains) and (clean_final.endswith("#") or "lists" in clean_final.lower()):
                             continue 
                             
+                        # 🧼 9. __CLICK__ 및 nstatic URL 예쁘게 세탁
                         clean_final = clean_final.replace("__CLICK__", "").replace("__click__", "")
                         if not clean_final or clean_final.lower() in ["null", "#", "http://null", "https://null", "__click__"]:
                             clean_final = "랜딩 URL 없음"
+                        if "nstatic.dcinside.com" in clean_final:
+                            clean_final = "랜딩 URL 없음 (이미지 서버)"
                         
-                        pos = get_korean_position(env, page_type, raw_pos, clean_img)
-                        text_val = clean_txt if clean_txt else "이미지 배너"
+                        # 위치 및 텍스트 결정 (이미지가 없으면 텍스트 배너로 분류)
+                        has_img = bool(clean_img)
+                        pos = get_korean_position(env, page_type, raw_pos, has_img)
+                        
+                        if has_img and not clean_txt:
+                            text_val = "이미지 배너"
+                        elif not has_img and clean_txt:
+                            text_val = clean_txt
+                            pos = "텍스트배너"
+                        else:
+                            text_val = clean_txt
                         
                         print(f"✅ {prefix} [{current_round}회차 새로고침 - {ad_count_in_round}번째 발견] {pos}")
-                        collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": clean_final, "img": img_src.strip(), "text": text_val})
+                        collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": clean_final, "img": clean_img, "text": text_val})
             except: continue
         if found_ad_in_this_round: valid_refreshes += 1
     return collected
