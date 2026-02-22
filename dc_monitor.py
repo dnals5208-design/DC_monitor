@@ -9,9 +9,8 @@ from datetime import datetime, timedelta, timezone
 SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
-# 🔥 사용자님이 잡아주신 100% 완벽한 정답 갤러리 리스트 유지
+# 🔥 100% 완벽한 정답 갤러리 리스트 유지
 ALL_GALLERIES = [
-    # 🏢 [정규 갤러리]
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
     {"name": "7급공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=7th", "mo": "https://m.dcinside.com/board/7th"},
     {"name": "고시시험갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=exam_gosi", "mo": "https://m.dcinside.com/board/exam_gosi"},
@@ -35,7 +34,6 @@ ALL_GALLERIES = [
     {"name": "해양경찰갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=korea_coast_guard", "mo": "https://m.dcinside.com/board/korea_coast_guard"},
     {"name": "회계사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cpa", "mo": "https://m.dcinside.com/board/cpa"},
 
-    # ⛺ [마이너 갤러리]
     {"name": "HSK갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=hsk123456", "mo": "https://m.dcinside.com/board/hsk123456"},
     {"name": "JLPT갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=jlpt", "mo": "https://m.dcinside.com/board/jlpt"},
     {"name": "공인중개사갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=bokdukbang", "mo": "https://m.dcinside.com/board/bokdukbang"},
@@ -143,15 +141,13 @@ async def capture_ads(context, page, env, gallery, page_type):
             await asyncio.sleep(1)
         except: pass
 
+        # 현재 갤러리의 기본 URL (파라미터/해시 떼어낸 순수 주소)
+        base_page_url = page.url.split('#')[0].split('?')[0].lower()
+
         for frame in page.frames:
             try:
                 for ad in await frame.locator("a").all():
                     
-                    # ☢️ [차단 1] 클릭 주소가 #이거나 X버튼이면 애초에 읽지도 않고 사살
-                    raw_href_attr = await ad.get_attribute("href") or ""
-                    if raw_href_attr.strip() == "#" or raw_href_attr.strip().endswith("#"):
-                        continue
-
                     raw_href = await ad.evaluate("""n => {
                         if (n.href && !n.href.includes('__CLICK__') && !n.href.includes('__click__') && !n.href.includes('null')) return n.href;
                         let oc = n.getAttribute('onclick');
@@ -161,16 +157,27 @@ async def capture_ads(context, page, env, gallery, page_type):
                         }
                         return n.href || '';
                     }""")
-                    
                     clean_href = raw_href.strip().lower()
                     
-                    # 🔥 [강화] 숨어있는 해커스/시원스쿨 배너 이미지를 악착같이 찾아내는 로직
+                    # 🔥 [완벽 해결 1] 1x1 트래킹 픽셀 스킵하고 진짜 이미지 캐내기
                     img_src = await ad.evaluate("""n => {
-                        let img = n.querySelector('img');
-                        if (img) {
-                            let src = img.src || img.getAttribute('data-src') || img.getAttribute('data-original');
+                        let getValidSrc = (el) => {
+                            // 가로 세로 30px 이하의 투명 픽셀이나 X 버튼은 모조리 무시!
+                            let w = el.getAttribute('width') || el.naturalWidth;
+                            let h = el.getAttribute('height') || el.naturalHeight;
+                            if ((w && parseInt(w) < 30) || (h && parseInt(h) < 30)) return null;
+                            
+                            let src = el.src || el.getAttribute('data-src') || el.getAttribute('data-original');
                             if (src && !src.includes('data:image')) return src;
+                            return null;
+                        };
+                        
+                        let imgs = n.querySelectorAll('img');
+                        for (let img of imgs) {
+                            let valid = getValidSrc(img);
+                            if (valid) return valid;
                         }
+                        
                         let children = n.querySelectorAll('*');
                         for (let child of children) {
                             let bg = window.getComputedStyle(child).backgroundImage;
@@ -178,15 +185,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                                 let url = bg.replace(/^url\\(['"]?/, '').replace(/['"]?\\)$/, '');
                                 if (!url.includes('data:image')) return url;
                             }
-                            if (child.tagName.toLowerCase() === 'img') {
-                                let src = child.src || child.getAttribute('data-src');
-                                if (src && !src.includes('data:image')) return src;
-                            }
-                        }
-                        let bg = window.getComputedStyle(n).backgroundImage;
-                        if (bg && bg !== 'none' && bg.includes('url')) {
-                            let url = bg.replace(/^url\\(['"]?/, '').replace(/['"]?\\)$/, '');
-                            if (!url.includes('data:image')) return url;
                         }
                         return '';
                     }""")
@@ -197,39 +195,38 @@ async def capture_ads(context, page, env, gallery, page_type):
                     clean_img = img_src.strip() 
                     clean_txt = txt.strip()
                     
-                    # 쓸데없는 이미지 텍스트 세탁
-                    if clean_img.startswith("data:image") or clean_img.startswith("blob:"):
+                    if clean_img and not clean_img.startswith("http") and not clean_img.startswith("//"):
                         clean_img = ""
                     elif clean_img.startswith("//"):
                         clean_img = "https:" + clean_img
-                    elif not clean_img.startswith("http"):
-                        clean_img = ""
 
-                    # 의미 없는 텍스트 껍데기 세탁
                     if clean_txt.lower() in ["null", "dcinside.com", "이미지 배너", "광고안내", ""]:
                         clean_txt = ""
 
-                    # 🚫 기본 블랙리스트
+                    # ☢️ [초강력 방어] 이미지도 없고 유효한 텍스트도 없으면 여기서 즉시 사살!
+                    if not clean_img and not clean_txt: 
+                        continue
+
+                    # 🚫 블랙리스트 필터
                     junk_texts = ["갤러리", "실시간 베스트", "광고안내", "이용안내", "개인정보", "운영자"]
                     if any(j in clean_txt for j in junk_texts) or clean_txt == "갤러리": continue
+                    
                     junk_hrefs = ["/dcad/", "/board/lists", "/mini/board/lists", "gall.dcinside.com/m"]
                     if any(j in clean_href for j in junk_hrefs): continue
-                    junk_images = ["noimage", "tit_", "sp_", "logo", "g_img", "blank", "/images/", "/dcad/", "traffic_", "150106_traffic", "default_banner", "icon", "dummy", "x_btn", "close", "btn_ad_close"]
+                    
+                    junk_images = ["noimage", "tit_", "sp_", "logo", "g_img", "blank", "/images/", "/dcad/", "traffic_", "150106_traffic", "default_banner"]
                     if clean_img and any(j in clean_img.lower() for j in junk_images): continue
+                    
                     external_ad_networks = ["google", "adsrvr", "criteo", "taboola", "doubleclick", "adnxs", "smartadserver"]
                     if any(k in clean_href for k in external_ad_networks): continue
 
-                    # ✅ 화이트리스트 
+                    # ✅ 화이트리스트
                     is_real_ad = False
                     if "addc.dc" in clean_href or "netinsight" in clean_href or "toast" in clean_href:
                         is_real_ad = True
-                    elif clean_img and "/ad/" in clean_img.lower() and "traffic_" not in clean_img.lower() and "/dcad/" not in clean_img.lower():
+                    elif clean_img and "/ad/" in clean_img.lower():
                         is_real_ad = True
                     if not is_real_ad: continue
-
-                    # ☢️ [차단 2] 이미지 주소가 없는데 텍스트도 없으면 즉시 사살! (빈 셀 방지)
-                    if not clean_img and not clean_txt: 
-                        continue
 
                     found_ad_in_this_round = True
                     key = clean_img or raw_href
@@ -245,13 +242,14 @@ async def capture_ads(context, page, env, gallery, page_type):
                             
                         clean_final = final_url.strip()
                         
-                        # ☢️ [차단 3] 엑스박스 등 내부 게시판으로 튕기는 링크 최종 확인 및 사살
-                        internal_domains = ["dcinside.com/board", "dcinside.com/mgallery", "dcinside.com/mini"]
-                        if any(d in clean_final.lower() for d in internal_domains) and (clean_final.endswith("#") or "lists" in clean_final.lower()):
+                        # 🔥 [완벽 해결 2] 자기 자신 갤러리로 튕기는 가짜 링크(X 버튼) 절대 사살!
+                        if clean_final.lower().startswith(base_page_url) or clean_final.endswith("#"):
                             continue 
-                        if "dcad/w/index.html" in clean_final or "dcad/m/index.html" in clean_final:
-                            continue
                             
+                        internal_domains = ["dcinside.com/board", "dcinside.com/mgallery", "dcinside.com/mini"]
+                        if any(d in clean_final.lower() for d in internal_domains) and "lists" in clean_final.lower():
+                            continue 
+
                         clean_final = clean_final.replace("__CLICK__", "").replace("__click__", "")
                         if not clean_final or clean_final.lower() in ["null", "#", "http://null", "https://null"]:
                             clean_final = "랜딩 URL 없음 (클릭 전용)"
@@ -261,18 +259,8 @@ async def capture_ads(context, page, env, gallery, page_type):
                         has_img = bool(clean_img)
                         pos = get_korean_position(env, page_type, raw_pos, has_img)
                         
-                        # 완벽한 텍스트 할당
-                        if has_img and not clean_txt:
-                            text_val = "이미지 배너"
-                        elif not has_img and clean_txt:
-                            text_val = clean_txt
-                            pos = "텍스트배너"
-                        else:
-                            text_val = clean_txt
-
-                        # ☢️ [최후의 방어선] 여기까지 왔는데 이미지도 없고, 글자도 없거나 '이미지 배너'라고 사기치면 즉시 사살!
-                        if not clean_img and text_val == "이미지 배너":
-                            continue
+                        text_val = "이미지 배너" if has_img and not clean_txt else clean_txt
+                        if not has_img and clean_txt: pos = "텍스트배너"
                         
                         print(f"✅ {prefix} [{current_round}회차 새로고침 - {ad_count_in_round}번째 발견] {pos}")
                         collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": clean_final, "img": clean_img, "text": text_val})
