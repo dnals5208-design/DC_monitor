@@ -1,49 +1,50 @@
-import gspread
-from datetime import datetime, timedelta, timezone
+name: 디시인사이드 광고 모니터링 자동화
 
-SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
-SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 21 * * *' # KST 오전 6시 실행
 
-def smart_init_sheet():
-    # 🔥 한국 시간(KST) 강제 적용
-    KST = timezone(timedelta(hours=9))
-    today_kst = datetime.now(KST).strftime("%Y-%m-%d")
-    
-    print(f"🧹 [스마트 초기화 봇 가동] 기준 날짜: {today_kst}")
-    
-    try:
-        # 구글 시트 연결
-        gc = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
-        ws = gc.open_by_url(SHEET_URL).get_worksheet(0)
-        
-        # 1. 현재 시트의 모든 데이터 가져오기
-        all_data = ws.get_all_values()
-        
-        if not all_data:
-            ws.append_row(['date', 'gallery', 'env', 'pos', 'url', 'img', 'text'])
-            print("✅ 빈 시트에 헤더를 추가했습니다.")
-            return
+jobs:
+  # 1단계: 시트 청소 전담
+  clean-sheet:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - run: |
+        python -m pip install --upgrade pip
+        pip install gspread
+    - env:
+        GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      run: echo "$GOOGLE_API_KEY" > service_account2020.json
+    - name: 구글 시트 초기화 (오늘 날짜)
+      run: python -u clean_sheet.py
 
-        headers = all_data[0]
-        
-        # 🔥 [핵심 패치] 오늘 날짜(today_kst)가 아닌 '과거 데이터'만 안전하게 걸러내기
-        historical_data = [row for row in all_data[1:] if row and row[0] != today_kst]
-        
-        # 2. 시트 전체 초기화 (데이터 덮어쓰기를 위해 잠시 비움)
-        ws.clear()
-        
-        # 3. 헤더 다시 넣기
-        ws.append_row(headers)
-        
-        # 4. 안전하게 대피시켰던 과거 데이터 다시 밀어넣기
-        if historical_data:
-            ws.append_rows(historical_data)
-            print(f"✅ 과거 데이터 {len(historical_data)}개 안전하게 유지 완료!")
-            
-        print(f"✅ 오직 오늘({today_kst}) 쌓인 데이터만 깔끔하게 비웠습니다. (새 수집 준비 완료)")
-        
-    except Exception as e:
-        print(f"❌ 초기화 중 에러 발생: {e}")
-
-if __name__ == "__main__":
-    smart_init_sheet()
+  # 2단계: 서버 10대 동시 출동 (매트릭스 10개)
+  scrape-data:
+    needs: clean-sheet
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 🔥 0부터 9까지 총 10대의 서버를 띄웁니다!
+        chunk: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] 
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        playwright install chromium
+    - env:
+        GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      run: echo "$GOOGLE_API_KEY" > service_account2020.json
+    - name: 수집 로봇 동시 가동 (서버 번호 ${{ matrix.chunk }})
+      env:
+        CHUNK_INDEX: ${{ matrix.chunk }}
+        TOTAL_CHUNKS: 10 # 🔥 파이썬에게 전체가 10대라고 알려줍니다.
+      run: python -u dc_monitor.py
