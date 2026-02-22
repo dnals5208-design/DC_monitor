@@ -10,8 +10,8 @@ from datetime import datetime, timedelta, timezone
 SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
-# 🔥 100% 완벽한 정답 갤러리 리스트
 ALL_GALLERIES = [
+    # 🏢 [정규 갤러리]
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
     {"name": "7급공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=7th", "mo": "https://m.dcinside.com/board/7th"},
     {"name": "고시시험갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=exam_gosi", "mo": "https://m.dcinside.com/board/exam_gosi"},
@@ -35,6 +35,7 @@ ALL_GALLERIES = [
     {"name": "해양경찰갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=korea_coast_guard", "mo": "https://m.dcinside.com/board/korea_coast_guard"},
     {"name": "회계사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cpa", "mo": "https://m.dcinside.com/board/cpa"},
 
+    # ⛺ [마이너 갤러리]
     {"name": "HSK갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=hsk123456", "mo": "https://m.dcinside.com/board/hsk123456"},
     {"name": "JLPT갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=jlpt", "mo": "https://m.dcinside.com/board/jlpt"},
     {"name": "공인중개사갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=bokdukbang", "mo": "https://m.dcinside.com/board/bokdukbang"},
@@ -146,20 +147,14 @@ async def capture_ads(context, page, env, gallery, page_type):
             try:
                 for ad in await frame.locator("a").all():
                     
-                    # 1. 원본 링크 가져오기
+                    # 1. 1차 엑스박스 및 내부 링크 원천 차단
                     raw_href_attr = await ad.get_attribute("href") or ""
                     clean_href_attr = raw_href_attr.strip().lower()
 
-                    # ☢️ [절대 차단 1] 엑스박스(#)와 게시판 목록(lists) 원천 차단
-                    if clean_href_attr == "#" or clean_href_attr.endswith("#"):
-                        continue
-                    if "/board/lists" in clean_href_attr or "/mini/board/lists" in clean_href_attr:
-                        continue
-                    # ☢️ [절대 차단 2] 광고안내(dcad) 원천 차단
-                    if "dcad" in clean_href_attr:
-                        continue
+                    if clean_href_attr == "#" or clean_href_attr.endswith("#"): continue
+                    if "/board/lists" in clean_href_attr or "/mini/board/lists" in clean_href_attr: continue
+                    if "dcad" in clean_href_attr: continue
 
-                    # 자바스크립트 우회 링크까지 추출
                     raw_href = await ad.evaluate("""n => {
                         if (n.href && !n.href.includes('__CLICK__') && !n.href.includes('__click__') && !n.href.includes('null')) return n.href;
                         let oc = n.getAttribute('onclick');
@@ -171,26 +166,34 @@ async def capture_ads(context, page, env, gallery, page_type):
                     }""")
                     clean_href = raw_href.strip().lower()
                     
-                    # 다시 한번 확인 (자바스크립트 안에 숨어있던 경우)
-                    if clean_href.endswith("#") or "/board/lists" in clean_href or "dcad" in clean_href:
-                        continue
+                    if clean_href.endswith("#") or "/board/lists" in clean_href or "dcad" in clean_href: continue
+                    if "javascript:" in clean_href and "window.open" not in clean_href: continue
                     
-                    # 2. 이미지 추출 (가장 안정적이었던 롤백 버전)
+                    # 🔥 2. [가장 중요한 수정] data-src를 먼저 찾아서 시원스쿨/해커스의 진짜 이미지를 캐냅니다!
                     img_src = await ad.evaluate("""n => {
+                        let getValidSrc = (el) => {
+                            // 투명 픽셀이 아닌 진짜 이미지가 담긴 data-src를 최우선으로 찾습니다.
+                            let src = el.getAttribute('data-src') || el.getAttribute('data-original') || el.src;
+                            if (src && !src.includes('data:image')) return src;
+                            return null;
+                        };
+                        
                         let img = n.querySelector('img');
                         if (img) {
-                            if (img.src && !img.src.includes('data:image')) return img.src;
-                            if (img.getAttribute('data-src')) return img.getAttribute('data-src');
+                            let valid = getValidSrc(img);
+                            if (valid) return valid;
                         }
                         let bg = window.getComputedStyle(n).backgroundImage;
                         if (bg && bg !== 'none' && bg.includes('url')) {
-                            return bg.replace(/^url\\(['"]?/, '').replace(/['"]?\\)$/, '');
+                            let url = bg.replace(/^url\\(['"]?/, '').replace(/['"]?\\)$/, '');
+                            if (!url.includes('data:image')) return url;
                         }
                         let child = n.querySelector('div, span');
                         if (child) {
                             let cbg = window.getComputedStyle(child).backgroundImage;
                             if (cbg && cbg !== 'none' && cbg.includes('url')) {
-                                return cbg.replace(/^url\\(['"]?/, '').replace(/['"]?\\)$/, '');
+                                let url = cbg.replace(/^url\\(['"]?/, '').replace(/['"]?\\)$/, '');
+                                if (!url.includes('data:image')) return url;
                             }
                         }
                         return '';
@@ -202,23 +205,30 @@ async def capture_ads(context, page, env, gallery, page_type):
                     clean_img = img_src.strip() 
                     clean_txt = txt.strip()
 
-                    # 🔥 [해결 1] 텍스트 앞에 붙은 'AD' 글자 깔끔하게 삭제
-                    if clean_txt.upper().startswith("AD"):
-                        clean_txt = re.sub(r'^AD\s*', '', clean_txt, flags=re.IGNORECASE).strip()
+                    # 🔥 3. 텍스트 앞 'AD' 글자 싹둑 잘라내기
+                    if clean_txt:
+                        clean_txt = re.sub(r'^(AD|ad)\s*', '', clean_txt).strip()
                     
-                    # 무의미한 텍스트 삭제
                     if clean_txt in ["광고안내", "갤러리", "이미지 배너", "null", "dcinside.com"]:
                         clean_txt = ""
 
-                    # ☢️ [절대 차단 3] 텍스트도 없고 이미지도 없으면 무조건 버림! (빈 배너 차단)
+                    # ☢️ 4. 이미지와 텍스트 둘 다 없으면 무조건 버림 (빈 셀 차단)
                     if not clean_img and not clean_txt:
                         continue
 
-                    # ✅ 오리지널 강력한 화이트리스트 (UI 스크랩 대참사 방지)
+                    # 🚫 이미지 블랙리스트 (X버튼 완벽 차단)
+                    junk_images = ["close", "x_btn", "traffic_", "default_banner", "noimage", "icon", "btn_ad_close"]
+                    if clean_img and any(j in clean_img.lower() for j in junk_images):
+                        continue
+
+                    # ✅ 오리지널 강력한 화이트리스트 
                     is_real_ad = False
                     if "addc.dc" in clean_href or "netinsight" in clean_href or "toast" in clean_href:
                         is_real_ad = True
-                    elif clean_img and "/ad/" in clean_img.lower() and "traffic_" not in clean_img.lower() and "dcad" not in clean_img.lower():
+                    elif clean_img and "/ad/" in clean_img.lower() and "traffic_" not in clean_img.lower():
+                        is_real_ad = True
+                    # 진짜 외부 광고(시원스쿨, 해커스 등)를 화이트리스트 없이도 수집하도록 통과
+                    elif clean_href and not ("dcinside.com" in clean_href and "addc" not in clean_href):
                         is_real_ad = True
                         
                     if not is_real_ad: 
@@ -238,7 +248,7 @@ async def capture_ads(context, page, env, gallery, page_type):
                             
                         clean_final = final_url.strip()
                         
-                        # 마지막으로 튕김 링크 차단 검사
+                        # 마지막 튕김 링크 및 X표시 최종 차단
                         if clean_final.endswith("#") or "/board/lists" in clean_final or "dcad" in clean_final:
                             continue 
                             
@@ -251,7 +261,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                         has_img = bool(clean_img)
                         pos = get_korean_position(env, page_type, raw_pos, has_img)
                         
-                        # 이미지 배너 텍스트 정리
                         if has_img and not clean_txt:
                             text_val = "이미지 배너"
                         else:
@@ -291,7 +300,7 @@ async def task_runner(sem, ctx, env, tgt, queue):
             
             if keyword not in page_title.replace(" ", "") or current_url in bounce_urls:
                 if env == "PC":
-                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 잘못된 주소 감지. 스피드 우회 탐색 시작...")
+                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 잘못된 주소 감지. 우회 시작...")
                     test_urls = [
                         f"https://gall.dcinside.com/board/lists/?id={gallery_id}",
                         f"https://gall.dcinside.com/mgallery/board/lists/?id={gallery_id}",
@@ -300,12 +309,9 @@ async def task_runner(sem, ctx, env, tgt, queue):
                     for t_url in test_urls:
                         await page.goto(t_url, wait_until="load", timeout=12000)
                         await asyncio.sleep(1)
-                        temp_title = await page.title()
-                        if keyword in temp_title.replace(" ", ""):
-                            print(f"✅ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 올바른 주소 안착 완료!")
-                            break
+                        if keyword in (await page.title()).replace(" ", ""): break
                 elif env == "MO":
-                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 잘못된 주소 감지. 스피드 우회 탐색 시작...")
+                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 잘못된 주소 감지. 우회 시작...")
                     test_urls = [
                         f"https://m.dcinside.com/board/{gallery_id}",
                         f"https://m.dcinside.com/mini/{gallery_id}"
@@ -313,10 +319,7 @@ async def task_runner(sem, ctx, env, tgt, queue):
                     for t_url in test_urls:
                         await page.goto(t_url, wait_until="load", timeout=12000)
                         await asyncio.sleep(1)
-                        temp_title = await page.title()
-                        if keyword in temp_title.replace(" ", ""):
-                            print(f"✅ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 올바른 주소 안착 완료!")
-                            break
+                        if keyword in (await page.title()).replace(" ", ""): break
 
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
             
@@ -350,6 +353,6 @@ async def main():
         
         await queue.put(None)
         await uploader
-        print(f"🎉 [서버 {CHUNK_INDEX+1}] 담당 구역 완벽하게 수집 종료!")
+        print(f"🎉 [서버 {CHUNK_INDEX+1}] 수집 종료!")
 
 if __name__ == "__main__": asyncio.run(main())
