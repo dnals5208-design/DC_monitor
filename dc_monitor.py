@@ -5,11 +5,12 @@ import os
 from playwright.async_api import async_playwright
 import gspread
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse # 🔥 가짜 링크를 박멸할 강력한 도메인 분석기
 
 SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
-# 🔥 100% 완벽한 정답 갤러리 리스트 유지
+# 🔥 100% 완벽한 정답 갤러리 리스트
 ALL_GALLERIES = [
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
     {"name": "7급공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=7th", "mo": "https://m.dcinside.com/board/7th"},
@@ -141,9 +142,6 @@ async def capture_ads(context, page, env, gallery, page_type):
             await asyncio.sleep(1)
         except: pass
 
-        # 현재 갤러리의 기본 URL (파라미터/해시 떼어낸 순수 주소)
-        base_page_url = page.url.split('#')[0].split('?')[0].lower()
-
         for frame in page.frames:
             try:
                 for ad in await frame.locator("a").all():
@@ -159,32 +157,48 @@ async def capture_ads(context, page, env, gallery, page_type):
                     }""")
                     clean_href = raw_href.strip().lower()
                     
-                    # 🔥 [완벽 해결 1] 1x1 트래킹 픽셀 스킵하고 진짜 이미지 캐내기
+                    # ☢️ [초강력 도메인 방어] 링크가 디시인사이드 내부(게시판, nstatic 창고 등)면 즉시 사살!
+                    # 단, 진짜 광고 추적기인 'addc.dcinside.com'만 예외로 살려둠.
+                    parsed_url = urlparse(clean_href)
+                    domain = parsed_url.netloc
+                    if domain.endswith("dcinside.com") and "addc" not in domain:
+                        continue # 여기서 망할 엑스박스, 광고안내 99.9% 궤멸!
+                    
+                    # 🔥 [강화] 해커스/시원스쿨의 꼼수를 뚫는 "부모 배경까지 뒤지는" 이미지 추출기
                     img_src = await ad.evaluate("""n => {
                         let getValidSrc = (el) => {
-                            // 가로 세로 30px 이하의 투명 픽셀이나 X 버튼은 모조리 무시!
-                            let w = el.getAttribute('width') || el.naturalWidth;
-                            let h = el.getAttribute('height') || el.naturalHeight;
-                            if ((w && parseInt(w) < 30) || (h && parseInt(h) < 30)) return null;
-                            
                             let src = el.src || el.getAttribute('data-src') || el.getAttribute('data-original');
                             if (src && !src.includes('data:image')) return src;
                             return null;
                         };
-                        
-                        let imgs = n.querySelectorAll('img');
-                        for (let img of imgs) {
-                            let valid = getValidSrc(img);
-                            if (valid) return valid;
-                        }
-                        
-                        let children = n.querySelectorAll('*');
-                        for (let child of children) {
-                            let bg = window.getComputedStyle(child).backgroundImage;
+                        let getValidBg = (el) => {
+                            if(!el) return null;
+                            let bg = window.getComputedStyle(el).backgroundImage;
                             if (bg && bg !== 'none' && bg.includes('url')) {
                                 let url = bg.replace(/^url\\(['"]?/, '').replace(/['"]?\\)$/, '');
                                 if (!url.includes('data:image')) return url;
                             }
+                            return null;
+                        };
+                        
+                        // 1. 자기 자신과 자식 탐색
+                        for (let img of n.querySelectorAll('img')) {
+                            let valid = getValidSrc(img);
+                            if (valid) return valid;
+                        }
+                        for (let child of n.querySelectorAll('*')) {
+                            let bg = getValidBg(child);
+                            if (bg) return bg;
+                        }
+                        let bg = getValidBg(n);
+                        if (bg) return bg;
+                        
+                        // 2. 부모 태그 탐색 (투명 클릭 영역 방어)
+                        let p = n.parentElement;
+                        for(let i=0; i<3 && p; i++) {
+                            let pbg = getValidBg(p);
+                            if (pbg) return pbg;
+                            p = p.parentElement;
                         }
                         return '';
                     }""")
@@ -200,33 +214,20 @@ async def capture_ads(context, page, env, gallery, page_type):
                     elif clean_img.startswith("//"):
                         clean_img = "https:" + clean_img
 
-                    if clean_txt.lower() in ["null", "dcinside.com", "이미지 배너", "광고안내", ""]:
-                        clean_txt = ""
+                    # 🧼 가짜 텍스트 세탁: 해커스 배너가 텅 비게 만들었던 주범 색출
+                    dummy_texts = ["이미지 배너", "광고안내", "광고", "배너", "null", "dcinside.com"]
+                    for dt in dummy_texts:
+                        if clean_txt.lower() == dt or clean_txt.lower().replace(" ", "") == dt:
+                            clean_txt = ""
 
-                    # ☢️ [초강력 방어] 이미지도 없고 유효한 텍스트도 없으면 여기서 즉시 사살!
+                    # ☢️ [초강력 방어] 이미지도 없고 텍스트도 없으면 여기서 즉시 사살! (빈 셀 완벽 방어)
                     if not clean_img and not clean_txt: 
                         continue
-
-                    # 🚫 블랙리스트 필터
-                    junk_texts = ["갤러리", "실시간 베스트", "광고안내", "이용안내", "개인정보", "운영자"]
-                    if any(j in clean_txt for j in junk_texts) or clean_txt == "갤러리": continue
-                    
-                    junk_hrefs = ["/dcad/", "/board/lists", "/mini/board/lists", "gall.dcinside.com/m"]
-                    if any(j in clean_href for j in junk_hrefs): continue
-                    
-                    junk_images = ["noimage", "tit_", "sp_", "logo", "g_img", "blank", "/images/", "/dcad/", "traffic_", "150106_traffic", "default_banner"]
-                    if clean_img and any(j in clean_img.lower() for j in junk_images): continue
-                    
-                    external_ad_networks = ["google", "adsrvr", "criteo", "taboola", "doubleclick", "adnxs", "smartadserver"]
-                    if any(k in clean_href for k in external_ad_networks): continue
-
-                    # ✅ 화이트리스트
-                    is_real_ad = False
-                    if "addc.dc" in clean_href or "netinsight" in clean_href or "toast" in clean_href:
-                        is_real_ad = True
-                    elif clean_img and "/ad/" in clean_img.lower():
-                        is_real_ad = True
-                    if not is_real_ad: continue
+                        
+                    # 🚫 이미지 블랙리스트
+                    junk_images = ["close", "x_btn", "traffic_", "default_banner", "noimage", "logo", "blank", "dummy"]
+                    if clean_img and any(j in clean_img.lower() for j in junk_images):
+                        continue
 
                     found_ad_in_this_round = True
                     key = clean_img or raw_href
@@ -242,19 +243,15 @@ async def capture_ads(context, page, env, gallery, page_type):
                             
                         clean_final = final_url.strip()
                         
-                        # 🔥 [완벽 해결 2] 자기 자신 갤러리로 튕기는 가짜 링크(X 버튼) 절대 사살!
-                        if clean_final.lower().startswith(base_page_url) or clean_final.endswith("#"):
-                            continue 
-                            
-                        internal_domains = ["dcinside.com/board", "dcinside.com/mgallery", "dcinside.com/mini"]
-                        if any(d in clean_final.lower() for d in internal_domains) and "lists" in clean_final.lower():
-                            continue 
+                        # ☢️ [마지막 방어] 최종 랜딩 링크도 디시 내부 주소면 사살
+                        parsed_final = urlparse(clean_final)
+                        domain_final = parsed_final.netloc
+                        if domain_final.endswith("dcinside.com") and "addc" not in domain_final:
+                            continue
 
                         clean_final = clean_final.replace("__CLICK__", "").replace("__click__", "")
                         if not clean_final or clean_final.lower() in ["null", "#", "http://null", "https://null"]:
                             clean_final = "랜딩 URL 없음 (클릭 전용)"
-                        if "nstatic.dcinside.com" in clean_final:
-                            clean_final = "랜딩 URL 없음 (이미지 전용)"
                         
                         has_img = bool(clean_img)
                         pos = get_korean_position(env, page_type, raw_pos, has_img)
