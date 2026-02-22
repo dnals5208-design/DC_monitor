@@ -2,6 +2,7 @@ import asyncio
 import random
 import time
 import os
+import re
 from playwright.async_api import async_playwright
 import gspread
 from datetime import datetime, timedelta, timezone
@@ -145,7 +146,20 @@ async def capture_ads(context, page, env, gallery, page_type):
             try:
                 for ad in await frame.locator("a").all():
                     
-                    # 1. 링크 추출 (가장 안정적이었던 롤백 버전)
+                    # 1. 원본 링크 가져오기
+                    raw_href_attr = await ad.get_attribute("href") or ""
+                    clean_href_attr = raw_href_attr.strip().lower()
+
+                    # ☢️ [절대 차단 1] 엑스박스(#)와 게시판 목록(lists) 원천 차단
+                    if clean_href_attr == "#" or clean_href_attr.endswith("#"):
+                        continue
+                    if "/board/lists" in clean_href_attr or "/mini/board/lists" in clean_href_attr:
+                        continue
+                    # ☢️ [절대 차단 2] 광고안내(dcad) 원천 차단
+                    if "dcad" in clean_href_attr:
+                        continue
+
+                    # 자바스크립트 우회 링크까지 추출
                     raw_href = await ad.evaluate("""n => {
                         if (n.href && !n.href.includes('__CLICK__') && !n.href.includes('__click__') && !n.href.includes('null')) return n.href;
                         let oc = n.getAttribute('onclick');
@@ -157,9 +171,9 @@ async def capture_ads(context, page, env, gallery, page_type):
                     }""")
                     clean_href = raw_href.strip().lower()
                     
-                    # ☢️ [차단 1] UI 버튼 자바스크립트 및 X버튼 즉시 사살
-                    if "javascript:" in clean_href and "window.open" not in clean_href: continue
-                    if clean_href == "#" or clean_href.endswith("#"): continue
+                    # 다시 한번 확인 (자바스크립트 안에 숨어있던 경우)
+                    if clean_href.endswith("#") or "/board/lists" in clean_href or "dcad" in clean_href:
+                        continue
                     
                     # 2. 이미지 추출 (가장 안정적이었던 롤백 버전)
                     img_src = await ad.evaluate("""n => {
@@ -187,42 +201,24 @@ async def capture_ads(context, page, env, gallery, page_type):
                     
                     clean_img = img_src.strip() 
                     clean_txt = txt.strip()
+
+                    # 🔥 [해결 1] 텍스트 앞에 붙은 'AD' 글자 깔끔하게 삭제
+                    if clean_txt.upper().startswith("AD"):
+                        clean_txt = re.sub(r'^AD\s*', '', clean_txt, flags=re.IGNORECASE).strip()
                     
-                    # 🧼 텍스트 껍데기 제거
-                    if clean_txt.lower() in ["null", "dcinside.com", ""]:
+                    # 무의미한 텍스트 삭제
+                    if clean_txt in ["광고안내", "갤러리", "이미지 배너", "null", "dcinside.com"]:
                         clean_txt = ""
 
-                    # ☢️ [차단 2] 이미지 없는 빈 배너 절대 사살 (이것이 핵심입니다)
-                    if not clean_img and clean_txt.replace(" ", "") in ["", "이미지배너"]:
-                        continue
-
-                    # 🚫 텍스트 블랙리스트 (광고안내 완벽 차단)
-                    junk_texts = ["갤러리", "실시간 베스트", "광고안내", "이용안내", "개인정보", "운영자"]
-                    if any(j in clean_txt for j in junk_texts) or clean_txt == "갤러리":
-                        continue
-
-                    # 🚫 이미지 블랙리스트 (X버튼 완벽 차단)
-                    junk_images = [
-                        "noimage", "tit_", "sp_", "logo", "g_img", "blank", "/images/", "/dcad/",
-                        "traffic_", "default_banner", "icon", "btn_ad_close", "close", "x_btn"
-                    ]
-                    if clean_img and any(j in clean_img.lower() for j in junk_images):
-                        continue
-
-                    # 🚫 URL 블랙리스트
-                    junk_hrefs = ["/dcad/", "/board/lists", "gall.dcinside.com/m"]
-                    if any(j in clean_href for j in junk_hrefs):
-                        continue
-                        
-                    external_ad_networks = ["google", "adsrvr", "criteo", "taboola", "doubleclick", "adnxs", "smartadserver"]
-                    if any(k in clean_href for k in external_ad_networks): 
+                    # ☢️ [절대 차단 3] 텍스트도 없고 이미지도 없으면 무조건 버림! (빈 배너 차단)
+                    if not clean_img and not clean_txt:
                         continue
 
                     # ✅ 오리지널 강력한 화이트리스트 (UI 스크랩 대참사 방지)
                     is_real_ad = False
                     if "addc.dc" in clean_href or "netinsight" in clean_href or "toast" in clean_href:
                         is_real_ad = True
-                    elif clean_img and "/ad/" in clean_img.lower() and "traffic_" not in clean_img.lower() and "/dcad/" not in clean_img.lower():
+                    elif clean_img and "/ad/" in clean_img.lower() and "traffic_" not in clean_img.lower() and "dcad" not in clean_img.lower():
                         is_real_ad = True
                         
                     if not is_real_ad: 
@@ -242,9 +238,8 @@ async def capture_ads(context, page, env, gallery, page_type):
                             
                         clean_final = final_url.strip()
                         
-                        # 내부망 튕김 차단
-                        internal_domains = ["dcinside.com/board", "dcinside.com/mgallery", "dcinside.com/mini"]
-                        if any(d in clean_final.lower() for d in internal_domains) and (clean_final.endswith("#") or "lists" in clean_final.lower()):
+                        # 마지막으로 튕김 링크 차단 검사
+                        if clean_final.endswith("#") or "/board/lists" in clean_final or "dcad" in clean_final:
                             continue 
                             
                         clean_final = clean_final.replace("__CLICK__", "").replace("__click__", "")
@@ -256,11 +251,9 @@ async def capture_ads(context, page, env, gallery, page_type):
                         has_img = bool(clean_img)
                         pos = get_korean_position(env, page_type, raw_pos, has_img)
                         
+                        # 이미지 배너 텍스트 정리
                         if has_img and not clean_txt:
                             text_val = "이미지 배너"
-                        elif not has_img and clean_txt:
-                            text_val = clean_txt
-                            pos = "텍스트배너"
                         else:
                             text_val = clean_txt
                         
