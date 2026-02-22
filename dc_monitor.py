@@ -10,8 +10,8 @@ from datetime import datetime, timedelta, timezone
 SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
-# 🔥 100% 완벽한 정답 갤러리 리스트
 ALL_GALLERIES = [
+    # 🏢 [정규 갤러리]
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
     {"name": "7급공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=7th", "mo": "https://m.dcinside.com/board/7th"},
     {"name": "고시시험갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=exam_gosi", "mo": "https://m.dcinside.com/board/exam_gosi"},
@@ -35,6 +35,7 @@ ALL_GALLERIES = [
     {"name": "해양경찰갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=korea_coast_guard", "mo": "https://m.dcinside.com/board/korea_coast_guard"},
     {"name": "회계사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cpa", "mo": "https://m.dcinside.com/board/cpa"},
 
+    # ⛺ [마이너 갤러리]
     {"name": "HSK갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=hsk123456", "mo": "https://m.dcinside.com/board/hsk123456"},
     {"name": "JLPT갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=jlpt", "mo": "https://m.dcinside.com/board/jlpt"},
     {"name": "공인중개사갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=bokdukbang", "mo": "https://m.dcinside.com/board/bokdukbang"},
@@ -146,11 +147,12 @@ async def capture_ads(context, page, env, gallery, page_type):
             try:
                 for ad in await frame.locator("a").all():
                     
-                    # 1. 1차 엑스박스 및 내부 링크 원천 차단
                     raw_href_attr = await ad.get_attribute("href") or ""
                     clean_href_attr = raw_href_attr.strip().lower()
 
+                    # ☢️ [절대 차단 1] UI 튕김 버튼 및 내부 목록, 광고안내(dcad) 원천 차단
                     if clean_href_attr == "#" or clean_href_attr.endswith("#"): continue
+                    if "javascript:" in clean_href_attr and "window.open" not in clean_href_attr: continue
                     if "/board/lists" in clean_href_attr or "/mini/board/lists" in clean_href_attr: continue
                     if "dcad" in clean_href_attr: continue
 
@@ -166,9 +168,8 @@ async def capture_ads(context, page, env, gallery, page_type):
                     clean_href = raw_href.strip().lower()
                     
                     if clean_href.endswith("#") or "/board/lists" in clean_href or "dcad" in clean_href: continue
-                    if "javascript:" in clean_href and "window.open" not in clean_href: continue
                     
-                    # 🔥 2. data-src 탐색 (1x1 픽셀 무시, 해커스/시원스쿨 진짜 이미지 찾기)
+                    # 🔥 2. data-src 탐색 (시원스쿨, 해커스 숨은 이미지 캐내기)
                     img_src = await ad.evaluate("""n => {
                         let getValidSrc = (el) => {
                             let src = el.getAttribute('data-src') || el.getAttribute('data-original') || el.src;
@@ -200,43 +201,40 @@ async def capture_ads(context, page, env, gallery, page_type):
                     txt = await ad.inner_text() or ""
                     
                     clean_img = img_src.strip() 
-                    clean_txt = txt.strip()
+                    # 🧼 HTML 태그(<u> 등) 완전 삭제
+                    clean_txt = re.sub(r'<[^>]+>', '', txt).strip()
 
-                    # 🔥 3. 텍스트 앞 'AD' 글자 싹둑 잘라내기
+                    # 🔥 3. 텍스트 앞 'AD' 글자 깔끔하게 도려내기
                     if clean_txt:
                         clean_txt = re.sub(r'^(AD|ad)\s*', '', clean_txt).strip()
                     
                     if clean_txt in ["광고안내", "갤러리", "이미지 배너", "null", "dcinside.com"]:
                         clean_txt = ""
 
-                    # ☢️ 4. 이미지와 텍스트 둘 다 없으면 무조건 버림 (빈 셀 차단)
-                    if not clean_img and not clean_txt:
-                        continue
+                    # ☢️ 4. 빈 껍데기 차단
+                    if not clean_img and not clean_txt: continue
 
-                    # 🚫 이미지 블랙리스트 (X버튼 완벽 차단)
+                    # 🚫 5. 강력한 블랙리스트 (네이버, 구글 등 외부망 및 X버튼 완벽 차단)
+                    external_ad_networks = ["google", "adsrvr", "criteo", "taboola", "doubleclick", "adnxs", "smartadserver", "naver.com", "ader.naver.com", "nclick", "kakao", "daum", "mobon", "exelbid"]
+                    if any(k in clean_href for k in external_ad_networks): continue
+                    
                     junk_images = ["close", "x_btn", "traffic_", "default_banner", "noimage", "icon", "btn_ad_close"]
-                    if clean_img and any(j in clean_img.lower() for j in junk_images):
-                        continue
+                    if clean_img and any(j in clean_img.lower() for j in junk_images): continue
 
-                    # ☢️ [초강력 방어] 네이버, 구글 등 '모든 외부 광고 네트워크' 차단! (이것 때문에 네이버 광고가 떴습니다)
-                    external_ad_networks = [
-                        "google", "adsrvr", "criteo", "taboola", "doubleclick", 
-                        "adnxs", "smartadserver", "naver.com", "ader.naver.com", 
-                        "nclick", "kakao", "daum", "mobon", "exelbid"
-                    ]
-                    if any(k in clean_href for k in external_ad_networks):
-                        continue
-
-                    # ✅ 화이트리스트 (외부 네트워크는 위에서 차단되었으므로 안전)
+                    # ☢️ 6. [핵심] 유저 게시글 쓰레기 데이터 원천 차단 (폐쇄형 화이트리스트)
                     is_real_ad = False
-                    if "addc.dc" in clean_href or "netinsight" in clean_href or "toast" in clean_href:
+                    
+                    # (1) 디시 공식 배너망
+                    if any(x in clean_href for x in ["addc.dc", "netinsight", "toast"]):
                         is_real_ad = True
+                    # (2) 디시 공식 광고 이미지
                     elif clean_img and "/ad/" in clean_img.lower() and "traffic_" not in clean_img.lower():
                         is_real_ad = True
-                    # 해커스, 시원스쿨 등 직접 연결되는 진짜 광고만 허용
-                    elif clean_href and not ("dcinside.com" in clean_href and "addc" not in clean_href):
+                    # (3) 해커스/시원스쿨 등 '디시 전용 마케팅 코드'가 포함된 진짜 광고
+                    elif any(utm in clean_href for utm in ["utm_source=dc", "ad_dc", "utm_medium=display", "utm_medium=banner", "utm_campaign=traffic"]):
                         is_real_ad = True
                         
+                    # 이 3가지에 해당하지 않으면 유튜브, 메가클라우드, 대학교 등 무조건 100% 버림!!!
                     if not is_real_ad: 
                         continue
 
@@ -254,7 +252,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                             
                         clean_final = final_url.strip()
                         
-                        # 마지막 튕김 링크 및 X표시, 광고안내(dcad) 최종 차단
                         if clean_final.endswith("#") or "/board/lists" in clean_final or "dcad" in clean_final:
                             continue 
                             
