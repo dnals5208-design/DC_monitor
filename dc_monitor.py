@@ -150,7 +150,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                     raw_href_attr = await ad.get_attribute("href") or ""
                     clean_href_attr = raw_href_attr.strip().lower()
 
-                    # ☢️ [절대 차단 1] UI 튕김 버튼 및 내부 목록, 광고안내(dcad) 원천 차단
                     if clean_href_attr == "#" or clean_href_attr.endswith("#"): continue
                     if "javascript:" in clean_href_attr and "window.open" not in clean_href_attr: continue
                     if "/board/lists" in clean_href_attr or "/mini/board/lists" in clean_href_attr: continue
@@ -169,9 +168,14 @@ async def capture_ads(context, page, env, gallery, page_type):
                     
                     if clean_href.endswith("#") or "/board/lists" in clean_href or "dcad" in clean_href: continue
                     
-                    # 🔥 2. data-src 탐색 (시원스쿨, 해커스 숨은 이미지 캐내기)
                     img_src = await ad.evaluate("""n => {
                         let getValidSrc = (el) => {
+                            // 🔥 1x1 픽셀, 투명 이미지 무시
+                            let w = el.getAttribute('width');
+                            let h = el.getAttribute('height');
+                            if (w && parseInt(w) <= 10) return null;
+                            if (h && parseInt(h) <= 10) return null;
+
                             let src = el.getAttribute('data-src') || el.getAttribute('data-original') || el.src;
                             if (src && !src.includes('data:image')) return src;
                             return null;
@@ -201,40 +205,36 @@ async def capture_ads(context, page, env, gallery, page_type):
                     txt = await ad.inner_text() or ""
                     
                     clean_img = img_src.strip() 
-                    # 🧼 HTML 태그(<u> 등) 완전 삭제
                     clean_txt = re.sub(r'<[^>]+>', '', txt).strip()
 
-                    # 🔥 3. 텍스트 앞 'AD' 글자 깔끔하게 도려내기
+                    # 🔥 [강력 조치] 이미지 URL 자리에 디시 게시판 주소가 들어갔다면 삭제해버림
+                    bad_img_urls = ["board/lists", "gall.dcinside.com", "m.dcinside.com"]
+                    if clean_img and any(bad in clean_img.lower() for bad in bad_img_urls):
+                        clean_img = ""
+
                     if clean_txt:
                         clean_txt = re.sub(r'^(AD|ad)\s*', '', clean_txt).strip()
                     
                     if clean_txt in ["광고안내", "갤러리", "이미지 배너", "null", "dcinside.com"]:
                         clean_txt = ""
 
-                    # ☢️ 4. 빈 껍데기 차단
+                    # ☢️ 이미지 URL도 지워졌고, 텍스트도 없으면 여기서 즉시 탈락(빈 껍데기 박멸)
                     if not clean_img and not clean_txt: continue
 
-                    # 🚫 5. 강력한 블랙리스트 (네이버, 구글 등 외부망 및 X버튼 완벽 차단)
                     external_ad_networks = ["google", "adsrvr", "criteo", "taboola", "doubleclick", "adnxs", "smartadserver", "naver.com", "ader.naver.com", "nclick", "kakao", "daum", "mobon", "exelbid"]
                     if any(k in clean_href for k in external_ad_networks): continue
                     
                     junk_images = ["close", "x_btn", "traffic_", "default_banner", "noimage", "icon", "btn_ad_close"]
                     if clean_img and any(j in clean_img.lower() for j in junk_images): continue
 
-                    # ☢️ 6. [핵심] 유저 게시글 쓰레기 데이터 원천 차단 (폐쇄형 화이트리스트)
                     is_real_ad = False
-                    
-                    # (1) 디시 공식 배너망
                     if any(x in clean_href for x in ["addc.dc", "netinsight", "toast"]):
                         is_real_ad = True
-                    # (2) 디시 공식 광고 이미지
                     elif clean_img and "/ad/" in clean_img.lower() and "traffic_" not in clean_img.lower():
                         is_real_ad = True
-                    # (3) 해커스/시원스쿨 등 '디시 전용 마케팅 코드'가 포함된 진짜 광고
                     elif any(utm in clean_href for utm in ["utm_source=dc", "ad_dc", "utm_medium=display", "utm_medium=banner", "utm_campaign=traffic"]):
                         is_real_ad = True
                         
-                    # 이 3가지에 해당하지 않으면 유튜브, 메가클라우드, 대학교 등 무조건 100% 버림!!!
                     if not is_real_ad: 
                         continue
 
