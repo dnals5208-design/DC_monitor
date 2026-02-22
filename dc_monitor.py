@@ -10,8 +10,8 @@ from datetime import datetime, timedelta, timezone
 SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
+# 🔥 100% 완벽한 정답 갤러리 리스트
 ALL_GALLERIES = [
-    # 🏢 [정규 갤러리]
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
     {"name": "7급공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=7th", "mo": "https://m.dcinside.com/board/7th"},
     {"name": "고시시험갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=exam_gosi", "mo": "https://m.dcinside.com/board/exam_gosi"},
@@ -35,7 +35,6 @@ ALL_GALLERIES = [
     {"name": "해양경찰갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=korea_coast_guard", "mo": "https://m.dcinside.com/board/korea_coast_guard"},
     {"name": "회계사갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=cpa", "mo": "https://m.dcinside.com/board/cpa"},
 
-    # ⛺ [마이너 갤러리]
     {"name": "HSK갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=hsk123456", "mo": "https://m.dcinside.com/board/hsk123456"},
     {"name": "JLPT갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=jlpt", "mo": "https://m.dcinside.com/board/jlpt"},
     {"name": "공인중개사갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=bokdukbang", "mo": "https://m.dcinside.com/board/bokdukbang"},
@@ -169,15 +168,13 @@ async def capture_ads(context, page, env, gallery, page_type):
                     if clean_href.endswith("#") or "/board/lists" in clean_href or "dcad" in clean_href: continue
                     if "javascript:" in clean_href and "window.open" not in clean_href: continue
                     
-                    # 🔥 2. [가장 중요한 수정] data-src를 먼저 찾아서 시원스쿨/해커스의 진짜 이미지를 캐냅니다!
+                    # 🔥 2. data-src 탐색 (1x1 픽셀 무시, 해커스/시원스쿨 진짜 이미지 찾기)
                     img_src = await ad.evaluate("""n => {
                         let getValidSrc = (el) => {
-                            // 투명 픽셀이 아닌 진짜 이미지가 담긴 data-src를 최우선으로 찾습니다.
                             let src = el.getAttribute('data-src') || el.getAttribute('data-original') || el.src;
                             if (src && !src.includes('data:image')) return src;
                             return null;
                         };
-                        
                         let img = n.querySelector('img');
                         if (img) {
                             let valid = getValidSrc(img);
@@ -221,13 +218,22 @@ async def capture_ads(context, page, env, gallery, page_type):
                     if clean_img and any(j in clean_img.lower() for j in junk_images):
                         continue
 
-                    # ✅ 오리지널 강력한 화이트리스트 
+                    # ☢️ [초강력 방어] 네이버, 구글 등 '모든 외부 광고 네트워크' 차단! (이것 때문에 네이버 광고가 떴습니다)
+                    external_ad_networks = [
+                        "google", "adsrvr", "criteo", "taboola", "doubleclick", 
+                        "adnxs", "smartadserver", "naver.com", "ader.naver.com", 
+                        "nclick", "kakao", "daum", "mobon", "exelbid"
+                    ]
+                    if any(k in clean_href for k in external_ad_networks):
+                        continue
+
+                    # ✅ 화이트리스트 (외부 네트워크는 위에서 차단되었으므로 안전)
                     is_real_ad = False
                     if "addc.dc" in clean_href or "netinsight" in clean_href or "toast" in clean_href:
                         is_real_ad = True
                     elif clean_img and "/ad/" in clean_img.lower() and "traffic_" not in clean_img.lower():
                         is_real_ad = True
-                    # 진짜 외부 광고(시원스쿨, 해커스 등)를 화이트리스트 없이도 수집하도록 통과
+                    # 해커스, 시원스쿨 등 직접 연결되는 진짜 광고만 허용
                     elif clean_href and not ("dcinside.com" in clean_href and "addc" not in clean_href):
                         is_real_ad = True
                         
@@ -248,7 +254,7 @@ async def capture_ads(context, page, env, gallery, page_type):
                             
                         clean_final = final_url.strip()
                         
-                        # 마지막 튕김 링크 및 X표시 최종 차단
+                        # 마지막 튕김 링크 및 X표시, 광고안내(dcad) 최종 차단
                         if clean_final.endswith("#") or "/board/lists" in clean_final or "dcad" in clean_final:
                             continue 
                             
