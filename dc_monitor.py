@@ -91,26 +91,20 @@ async def uploader_worker(queue, ws):
     if buffer:
         await asyncio.to_thread(safe_batch_upload, ws, buffer)
 
-# 🔥 [핵심 패치 1] URL 텍스트를 분석하여 위치를 기가 막히게 뽑아내는 로직 추가!
 def get_korean_position(env, page_type, raw_pos, is_image, urls_text):
-    # HTML 클래스명과 광고 URL을 모두 합쳐서 위치 단어를 스캔합니다.
     raw = (str(raw_pos) + " " + str(urls_text)).lower() 
     
     if not is_image: return "텍스트배너"
-    
-    # 1. URL에 아이콘이나 플로팅 명시되어 있으면 무조건 '아이콘배너'
     if "icon" in raw or "float" in raw or "pop-layer" in raw: return "아이콘배너"
     
     if env == "PC":
         if page_type == "본문": 
             return "하단배너" if "bottom" in raw or "btm" in raw else "게시글배너"
-        else: # 리스트 페이지
-            # 2. URL에 left, right 명시되어 있으면 무조건 '좌측/우측 윙배너'
+        else:
             if "right" in raw or "wing" in raw: return "우측배너"
             if "left" in raw: return "좌측배너"
-            
             return "하단배너" if "bottom" in raw or "btm" in raw else "상단배너"
-    else: # MO 환경
+    else:
         if page_type == "본문": return "하단배너" if "bottom" in raw or "btm" in raw else "게시글배너"
         else: return "하단배너" if "bottom" in raw or "btm" in raw else "상단배너"
 
@@ -149,12 +143,12 @@ async def capture_ads(context, page, env, gallery, page_type):
     KST = timezone(timedelta(hours=9))
     today = datetime.now(KST).strftime("%Y-%m-%d")
     
-    valid_refreshes, attempt = 0, 0
+    attempt = 0
     prefix = f"[서버 {CHUNK_INDEX+1}|{env}|{gallery[:4]}|{page_type}]"
     
-    while valid_refreshes < 4 and attempt < 6:
+    # 🔥 [수정] 중복 없는 광고 15개를 수집할 때까지 최대 25번 새로고침!
+    while len(collected) < 15 and attempt < 25:
         attempt += 1; found_ad_in_this_round = False
-        current_round = valid_refreshes + 1
         ad_count_in_round = 0
         try:
             await page.reload(wait_until="load", timeout=12000)
@@ -170,8 +164,10 @@ async def capture_ads(context, page, env, gallery, page_type):
         base_page_url = page.url.split('#')[0].split('?')[0].lower()
 
         for frame in page.frames:
+            if len(collected) >= 15: break # 15개 채우면 즉시 중단
             try:
                 for ad in await frame.locator("a").all():
+                    if len(collected) >= 15: break # 15개 채우면 즉시 중단
                     
                     raw_href_attr = await ad.get_attribute("href") or ""
                     clean_href_attr = raw_href_attr.strip().lower()
@@ -285,7 +281,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                             clean_final = "랜딩 URL 없음 (이미지 서버)"
                         
                         has_img = bool(clean_img)
-                        # 🔥 [핵심 패치 2] 위치 판독기에 원본 URL과 최종 URL을 모두 전달해서 완벽 분석!
                         pos = get_korean_position(env, page_type, raw_pos, has_img, clean_href + " " + clean_final)
                         
                         if has_img and not clean_txt:
@@ -293,10 +288,9 @@ async def capture_ads(context, page, env, gallery, page_type):
                         else:
                             text_val = clean_txt
                         
-                        print(f"✅ {prefix} [{current_round}회차 새로고침 - {ad_count_in_round}번째 발견] {pos}")
+                        print(f"✅ {prefix} [{attempt}회차 새로고침] {pos} (현재 총 {len(collected)+1}/15개 수집)")
                         collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": clean_final, "img": clean_img, "text": text_val})
             except: continue
-        if found_ad_in_this_round: valid_refreshes += 1
     return collected
 
 async def task_runner(sem, ctx, env, tgt, queue):
