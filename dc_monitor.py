@@ -105,15 +105,32 @@ def get_korean_position(env, page_type, raw_pos, is_image):
         if page_type == "본문": return "하단배너" if "bottom" in raw or "btm" in raw else "게시글배너"
         else: return "하단배너" if "bottom" in raw or "btm" in raw else "상단배너"
 
+# 🔥 [핵심 수정] 최종 URL을 끝까지 추적하는 집요한 로직 적용
 async def get_final_landing_url(context, redirect_url):
-    if not redirect_url or "addc.dcinside" not in redirect_url: return redirect_url
+    if not redirect_url or not redirect_url.startswith("http"): 
+        return redirect_url
+    
+    # 추적 서버(addc.dc, netinsight)가 아니면 굳이 추적할 필요 없이 바로 반환
+    if "addc.dc" not in redirect_url and "netinsight" not in redirect_url: 
+        return redirect_url
+    
     try:
         temp = await context.new_page()
-        await temp.goto(redirect_url, wait_until="commit", timeout=4000)
-        url = temp.url
+        await temp.goto(redirect_url, wait_until="domcontentloaded", timeout=8000)
+        
+        # 주소창이 addc.dcinside에서 해커스 등 진짜 주소로 바뀔 때까지 최대 4초 대기
+        for _ in range(20):
+            if "addc.dc" not in temp.url and "netinsight" not in temp.url:
+                break
+            await asyncio.sleep(0.2)
+            
+        final_url = temp.url
         await temp.close()
-        return url
-    except: return redirect_url
+        return final_url
+    except: 
+        try: await temp.close()
+        except: pass
+        return redirect_url
 
 async def block_resources(route):
     if route.request.resource_type in ["font", "media"]: await route.abort()
@@ -170,7 +187,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                     
                     img_src = await ad.evaluate("""n => {
                         let getValidSrc = (el) => {
-                            // 🔥 1x1 픽셀, 투명 이미지 무시
                             let w = el.getAttribute('width');
                             let h = el.getAttribute('height');
                             if (w && parseInt(w) <= 10) return null;
@@ -207,7 +223,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                     clean_img = img_src.strip() 
                     clean_txt = re.sub(r'<[^>]+>', '', txt).strip()
 
-                    # 🔥 [강력 조치] 이미지 URL 자리에 디시 게시판 주소가 들어갔다면 삭제해버림
                     bad_img_urls = ["board/lists", "gall.dcinside.com", "m.dcinside.com"]
                     if clean_img and any(bad in clean_img.lower() for bad in bad_img_urls):
                         clean_img = ""
@@ -218,7 +233,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                     if clean_txt in ["광고안내", "갤러리", "이미지 배너", "null", "dcinside.com"]:
                         clean_txt = ""
 
-                    # ☢️ 이미지 URL도 지워졌고, 텍스트도 없으면 여기서 즉시 탈락(빈 껍데기 박멸)
                     if not clean_img and not clean_txt: continue
 
                     external_ad_networks = ["google", "adsrvr", "criteo", "taboola", "doubleclick", "adnxs", "smartadserver", "naver.com", "ader.naver.com", "nclick", "kakao", "daum", "mobon", "exelbid"]
