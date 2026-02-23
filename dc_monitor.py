@@ -91,38 +91,42 @@ async def uploader_worker(queue, ws):
     if buffer:
         await asyncio.to_thread(safe_batch_upload, ws, buffer)
 
-def get_korean_position(env, page_type, raw_pos, is_image):
-    raw = str(raw_pos).lower()
+# 🔥 [핵심 패치 1] URL 텍스트를 분석하여 위치를 기가 막히게 뽑아내는 로직 추가!
+def get_korean_position(env, page_type, raw_pos, is_image, urls_text):
+    # HTML 클래스명과 광고 URL을 모두 합쳐서 위치 단어를 스캔합니다.
+    raw = (str(raw_pos) + " " + str(urls_text)).lower() 
+    
     if not is_image: return "텍스트배너"
+    
+    # 1. URL에 아이콘이나 플로팅 명시되어 있으면 무조건 '아이콘배너'
     if "icon" in raw or "float" in raw or "pop-layer" in raw: return "아이콘배너"
+    
     if env == "PC":
-        if page_type == "본문": return "하단배너" if "bottom" in raw or "btm" in raw else "게시글배너"
-        else:
+        if page_type == "본문": 
+            return "하단배너" if "bottom" in raw or "btm" in raw else "게시글배너"
+        else: # 리스트 페이지
+            # 2. URL에 left, right 명시되어 있으면 무조건 '좌측/우측 윙배너'
             if "right" in raw or "wing" in raw: return "우측배너"
             if "left" in raw: return "좌측배너"
+            
             return "하단배너" if "bottom" in raw or "btm" in raw else "상단배너"
-    else: 
+    else: # MO 환경
         if page_type == "본문": return "하단배너" if "bottom" in raw or "btm" in raw else "게시글배너"
         else: return "하단배너" if "bottom" in raw or "btm" in raw else "상단배너"
 
-# 🔥 [핵심 패치 1] 속도와 정확도를 모두 잡은 진짜 주소 추적기
 async def get_final_landing_url(context, redirect_url, referer_url):
     if not redirect_url or not redirect_url.startswith("http"): return redirect_url
     if "addc.dc" not in redirect_url and "netinsight" not in redirect_url: return redirect_url
     
     try:
         temp = await context.new_page()
-        
-        # 무거운 이미지, 폰트 다 버리고 오직 껍데기(주소)만 긁어옵니다. 속도 극대화.
         await temp.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "media", "font", "stylesheet"] else route.continue_())
         
         try:
-            # commit 모드: 페이지 로딩을 전부 기다리지 않고, 네트워크 신호가 가고 주소창이 변하는 즉시 완료!
             await temp.goto(redirect_url, referer=referer_url, wait_until="commit", timeout=5000)
         except:
-            pass # 타임아웃 나도 이미 주소창은 바뀌었음! 무시하고 진행.
+            pass 
             
-        # 최대 5초간 0.2초마다 주소창 감시
         for _ in range(25):
             current_url = temp.url
             if "addc.dc" not in current_url and "netinsight" not in current_url and current_url != "about:blank":
@@ -264,7 +268,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                         ad_count_in_round += 1
                         
                         final_url = ""
-                        # 🔥 [핵심 패치 2] "click" 대신 "__click__" 매크로만 필터링하여 오작동 완전 해결!
                         if not raw_href.startswith("javascript") and raw_href != "#" and "__click__" not in raw_href.lower():
                             final_url = await get_final_landing_url(context, raw_href, base_page_url)
                         else:
@@ -282,7 +285,8 @@ async def capture_ads(context, page, env, gallery, page_type):
                             clean_final = "랜딩 URL 없음 (이미지 서버)"
                         
                         has_img = bool(clean_img)
-                        pos = get_korean_position(env, page_type, raw_pos, has_img)
+                        # 🔥 [핵심 패치 2] 위치 판독기에 원본 URL과 최종 URL을 모두 전달해서 완벽 분석!
+                        pos = get_korean_position(env, page_type, raw_pos, has_img, clean_href + " " + clean_final)
                         
                         if has_img and not clean_txt:
                             text_val = "이미지 배너"
