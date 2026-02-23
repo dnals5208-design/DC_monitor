@@ -105,22 +105,27 @@ def get_korean_position(env, page_type, raw_pos, is_image):
         if page_type == "본문": return "하단배너" if "bottom" in raw or "btm" in raw else "게시글배너"
         else: return "하단배너" if "bottom" in raw or "btm" in raw else "상단배너"
 
-# 🔥 [핵심 수정] 최종 URL을 끝까지 추적하는 집요한 로직 적용
-async def get_final_landing_url(context, redirect_url):
-    if not redirect_url or not redirect_url.startswith("http"): 
-        return redirect_url
-    
-    # 추적 서버(addc.dc, netinsight)가 아니면 굳이 추적할 필요 없이 바로 반환
-    if "addc.dc" not in redirect_url and "netinsight" not in redirect_url: 
-        return redirect_url
+# 🔥 [핵심 패치 1] 속도와 정확도를 모두 잡은 진짜 주소 추적기
+async def get_final_landing_url(context, redirect_url, referer_url):
+    if not redirect_url or not redirect_url.startswith("http"): return redirect_url
+    if "addc.dc" not in redirect_url and "netinsight" not in redirect_url: return redirect_url
     
     try:
         temp = await context.new_page()
-        await temp.goto(redirect_url, wait_until="domcontentloaded", timeout=8000)
         
-        # 주소창이 addc.dcinside에서 해커스 등 진짜 주소로 바뀔 때까지 최대 4초 대기
-        for _ in range(20):
-            if "addc.dc" not in temp.url and "netinsight" not in temp.url:
+        # 무거운 이미지, 폰트 다 버리고 오직 껍데기(주소)만 긁어옵니다. 속도 극대화.
+        await temp.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "media", "font", "stylesheet"] else route.continue_())
+        
+        try:
+            # commit 모드: 페이지 로딩을 전부 기다리지 않고, 네트워크 신호가 가고 주소창이 변하는 즉시 완료!
+            await temp.goto(redirect_url, referer=referer_url, wait_until="commit", timeout=5000)
+        except:
+            pass # 타임아웃 나도 이미 주소창은 바뀌었음! 무시하고 진행.
+            
+        # 최대 5초간 0.2초마다 주소창 감시
+        for _ in range(25):
+            current_url = temp.url
+            if "addc.dc" not in current_url and "netinsight" not in current_url and current_url != "about:blank":
                 break
             await asyncio.sleep(0.2)
             
@@ -128,8 +133,6 @@ async def get_final_landing_url(context, redirect_url):
         await temp.close()
         return final_url
     except: 
-        try: await temp.close()
-        except: pass
         return redirect_url
 
 async def block_resources(route):
@@ -159,6 +162,8 @@ async def capture_ads(context, page, env, gallery, page_type):
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
             await asyncio.sleep(1)
         except: pass
+
+        base_page_url = page.url.split('#')[0].split('?')[0].lower()
 
         for frame in page.frames:
             try:
@@ -259,8 +264,9 @@ async def capture_ads(context, page, env, gallery, page_type):
                         ad_count_in_round += 1
                         
                         final_url = ""
-                        if not raw_href.startswith("javascript") and raw_href != "#" and "click" not in raw_href.lower():
-                            final_url = await get_final_landing_url(context, raw_href)
+                        # 🔥 [핵심 패치 2] "click" 대신 "__click__" 매크로만 필터링하여 오작동 완전 해결!
+                        if not raw_href.startswith("javascript") and raw_href != "#" and "__click__" not in raw_href.lower():
+                            final_url = await get_final_landing_url(context, raw_href, base_page_url)
                         else:
                             final_url = raw_href
                             
