@@ -14,7 +14,7 @@ ALL_GALLERIES = [
     {"name": "자격증갤러리","pc":"https://gall.dcinside.com/coq","mo":"https://m.dcinside.com/board/coq"},
     {"name": "편입갤러리","pc":"https://gall.dcinside.com/admission","mo":"https://m.dcinside.com/board/admission"},
     {"name": "정병권갤러리","pc":"https://gall.dcinside.com/jeongbyeongkwon","mo":"https://m.dcinside.com/board/jeongbyeongkwon"},
-    {"name": "학점은행제 갤러리","pc":"https://gall.dcinside.com/acbs","mo":"https://m.dcinside.com/board/acbs"}
+    {"name": "학점은행제 갤러리","pc":"https://gall.dcinside.com/acbs","mo":"https://m.dcinside.com/board/acbs"},
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
     {"name": "법학전문대학원갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists?id=lawschool", "mo": "https://m.dcinside.com/board/lawschool"},
     {"name": "공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=government_new1", "mo": "https://m.dcinside.com/board/government_new1"},
@@ -31,6 +31,8 @@ ALL_GALLERIES = [
     {"name": "영어갤러리", "pc": "https://gall.dcinside.com/board/lists?id=English", "mo": "https://m.dcinside.com/board/English"},
     {"name": "영어회화갤러리", "pc": "https://gall.dcinside.com/board/lists?id=ec", "mo": "https://m.dcinside.com/board/ec"},
     {"name": "중국어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=chinese", "mo": "https://m.dcinside.com/board/chinese"},
+    {"name": "세무사갤러리","pc":"https://gall.dcinside.com/mgallery/board/lists/?id=cta","mo":"https://m.dcinside.com/board/cta"},
+    {"name": "회계사갤러리","pc":"https://gall.dcinside.com/mgallery/board/lists/?id=cpa","mo":"https://m.dcinside.com/board/cpa"}
 ]
 
 CHUNK_INDEX = int(os.getenv("CHUNK_INDEX", 0))
@@ -71,24 +73,20 @@ async def uploader_worker(queue, ws):
     if buffer:
         await asyncio.to_thread(safe_batch_upload, ws, buffer)
 
-# 🔥 [핵심 패치 1] 사용자님이 짚어주신 URL 구조 기반의 완벽한 위치 판독기
 def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
-    target_url = raw_href.split('?')[0].lower() # 파라미터 날리고 순수 경로만 확보
+    target_url = raw_href.split('?')[0].lower() 
     
-    # 1. 디시 공식 URL인 경우 (사용자님 발견 공식 적용)
     if "click/dcinside" in target_url:
         try:
             parts = target_url.split('/')
-            last_part = parts[-1] # 예: list@top_coq, body@right_public
+            last_part = parts[-1] 
             
             if '@' in last_part:
                 page_str, pos_gallery = last_part.split('@', 1)
                 pos_str = pos_gallery.split('_')[0]
                 
-                # list vs body 구분
                 page_kr = "리스트" if page_str == "list" else "본문"
                 
-                # 세부 위치 구분
                 if pos_str == "top": pos_kr = "상단배너"
                 elif pos_str == "middle": pos_kr = "중단배너"
                 elif pos_str in ["bottom", "reply"]: pos_kr = "하단배너"
@@ -100,9 +98,8 @@ def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
                 
                 return f"{page_kr} {pos_kr}"
         except:
-            pass # 파싱 중 에러나면 폴백 로직으로 이동
+            pass 
             
-    # 2. 공식 URL 패턴이 없거나 매칭 실패 시 기존 폴백 로직
     raw = (str(raw_pos) + " " + str(urls_text)).lower() 
     
     if not is_image: return "텍스트배너"
@@ -159,8 +156,8 @@ async def capture_ads(context, page, env, gallery, page_type):
     attempt = 0
     prefix = f"[서버 {CHUNK_INDEX+1}|{env}|{gallery[:4]}|{page_type}]"
     
-    # 🔥 [수정] 속도 최적화를 위해 다시 10개(최대 15번 시도)로 원복했습니다.
-    while len(collected) < 10 and attempt < 15:
+    # 목표 수집 개수 15개, 최대 25회 시도로 변경되었습니다.
+    while len(collected) < 15 and attempt < 25:
         attempt += 1; found_ad_in_this_round = False
         ad_count_in_round = 0
         try:
@@ -177,10 +174,10 @@ async def capture_ads(context, page, env, gallery, page_type):
         base_page_url = page.url.split('#')[0].split('?')[0].lower()
 
         for frame in page.frames:
-            if len(collected) >= 10: break # 10개 채우면 즉시 중단
+            if len(collected) >= 15: break 
             try:
                 for ad in await frame.locator("a").all():
-                    if len(collected) >= 10: break # 10개 채우면 즉시 중단
+                    if len(collected) >= 15: break 
                     
                     raw_href_attr = await ad.get_attribute("href") or ""
                     clean_href_attr = raw_href_attr.strip().lower()
@@ -294,7 +291,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                             clean_final = "랜딩 URL 없음 (이미지 서버)"
                         
                         has_img = bool(clean_img)
-                        # 🔥 [핵심 패치 2] 위치 판독기에 raw_href를 넘겨주어 URL 텍스트를 파싱하게 합니다.
                         pos = get_korean_position(env, page_type, raw_pos, has_img, raw_href, clean_href + " " + clean_final)
                         
                         if has_img and not clean_txt:
@@ -302,7 +298,7 @@ async def capture_ads(context, page, env, gallery, page_type):
                         else:
                             text_val = clean_txt
                         
-                        print(f"✅ {prefix} [{attempt}회차 새로고침] {pos} (현재 총 {len(collected)+1}/10개 수집)")
+                        print(f"✅ {prefix} [{attempt}회차 새로고침] {pos} (현재 총 {len(collected)+1}/15개 수집)")
                         collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": clean_final, "img": clean_img, "text": text_val})
             except: continue
     return collected
@@ -329,7 +325,7 @@ async def task_runner(sem, ctx, env, tgt, queue):
             
             page_title = await page.title()
             current_url = page.url.lower()
-            keyword = tgt['name'].replace("갤러리", "").strip()
+            keyword = tgt['name'].replace("갤러리", "").replace(" ", "").strip()
             
             bounce_urls = ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini"]
             
