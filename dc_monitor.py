@@ -156,8 +156,8 @@ async def capture_ads(context, page, env, gallery, page_type):
     attempt = 0
     prefix = f"[서버 {CHUNK_INDEX+1}|{env}|{gallery[:4]}|{page_type}]"
     
-    # 목표 수집 개수 15개, 최대 25회 시도로 변경되었습니다.
-    while len(collected) < 15 and attempt < 25:
+    # 🔥 목표 수집 개수 10개, 최대 15회 시도로 완벽하게 원복했습니다.
+    while len(collected) < 10 and attempt < 15:
         attempt += 1; found_ad_in_this_round = False
         ad_count_in_round = 0
         try:
@@ -174,10 +174,10 @@ async def capture_ads(context, page, env, gallery, page_type):
         base_page_url = page.url.split('#')[0].split('?')[0].lower()
 
         for frame in page.frames:
-            if len(collected) >= 15: break 
+            if len(collected) >= 10: break 
             try:
                 for ad in await frame.locator("a").all():
-                    if len(collected) >= 15: break 
+                    if len(collected) >= 10: break 
                     
                     raw_href_attr = await ad.get_attribute("href") or ""
                     clean_href_attr = raw_href_attr.strip().lower()
@@ -298,7 +298,7 @@ async def capture_ads(context, page, env, gallery, page_type):
                         else:
                             text_val = clean_txt
                         
-                        print(f"✅ {prefix} [{attempt}회차 새로고침] {pos} (현재 총 {len(collected)+1}/15개 수집)")
+                        print(f"✅ {prefix} [{attempt}회차 새로고침] {pos} (현재 총 {len(collected)+1}/10개 수집)")
                         collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": clean_final, "img": clean_img, "text": text_val})
             except: continue
     return collected
