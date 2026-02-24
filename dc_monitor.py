@@ -11,10 +11,10 @@ SERVICE_ACCOUNT_FILE = 'service_account2020.json'
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
 ALL_GALLERIES = [
-    {"name":"자격증갤러리","pc":"https://gall.dcinside.com/coq","mo":"https://m.dcinside.com/board/coq"},
-    {"name":"편입갤러리","pc":"https://gall.dcinside.com/admission","mo":"https://m.dcinside.com/board/admission"},
-    {"name":"정병권갤러리","pc":"https://gall.dcinside.com/jeongbyeongkwon","mo":"https://m.dcinside.com/board/jeongbyeongkwon"},
-    {"name":"학점은행제 갤러리","pc":"https://gall.dcinside.com/acbs","mo":"https://m.dcinside.com/board/acbs"}
+    {"name": "자격증갤러리","pc":"https://gall.dcinside.com/coq","mo":"https://m.dcinside.com/board/coq"},
+    {"name": "편입갤러리","pc":"https://gall.dcinside.com/admission","mo":"https://m.dcinside.com/board/admission"},
+    {"name": "정병권갤러리","pc":"https://gall.dcinside.com/jeongbyeongkwon","mo":"https://m.dcinside.com/board/jeongbyeongkwon"},
+    {"name": "학점은행제 갤러리","pc":"https://gall.dcinside.com/acbs","mo":"https://m.dcinside.com/board/acbs"}
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
     {"name": "법학전문대학원갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists?id=lawschool", "mo": "https://m.dcinside.com/board/lawschool"},
     {"name": "공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=government_new1", "mo": "https://m.dcinside.com/board/government_new1"},
@@ -23,9 +23,7 @@ ALL_GALLERIES = [
     {"name": "주택관리사갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=housingmanager", "mo": "https://m.dcinside.com/board/housingmanager"},
     {"name": "감정평가사갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=gampyeong", "mo": "https://m.dcinside.com/board/gampyeong"},
     {"name": "행정사갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=hangjungsa", "mo": "https://m.dcinside.com/board/hangjungsa"},
-    {"name": "공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=government_new1", "mo": "https://m.dcinside.com/board/government_new1"},
-    {"name": "군무원갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=firefighter", "mo": "https://gall.dcinside.com/mgallery/board/lists/?id=firefighter"},
-    {"name": "공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=government_new1", "mo": "https://m.dcinside.com/board/government_new1"},
+    {"name": "소방갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=firefighter", "mo": "https://gall.dcinside.com/mgallery/board/lists/?id=firefighter"},
     {"name": "순경갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=policeofficer", "mo": "https://m.dcinside.com/board/lists/?id=policeofficer"},
     {"name": "임용고시갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=tce", "mo": "https://m.dcinside.com/board/lists/?id=tce"},
     {"name": "토익갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=toeic", "mo": "https://m.dcinside.com/board/toeic"},
