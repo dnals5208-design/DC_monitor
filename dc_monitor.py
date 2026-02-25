@@ -155,10 +155,8 @@ async def capture_ads(context, page, env, gallery, page_type):
     today = datetime.now(KST).strftime("%Y-%m-%d")
     prefix = f"[서버 {CHUNK_INDEX+1}|{env}|{gallery[:4]}|{page_type}]"
     
-    base_page_url = page.url.split('#')[0].split('?')[0].lower()
-    
-    # 🔥 군더더기 싹 빼고 30회 + 쾌속 스크롤만 유지
-    for attempt in range(1, 31):
+    # 🔥 모든 군더더기 싹 제거! 단순 무식하게 딱 35번만 쌩쌩 돌립니다.
+    for attempt in range(1, 36):
         try:
             await page.reload(wait_until="load", timeout=12000)
             await asyncio.sleep(2)
@@ -169,6 +167,8 @@ async def capture_ads(context, page, env, gallery, page_type):
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
             await asyncio.sleep(1)
         except: pass
+
+        base_page_url = page.url.split('#')[0].split('?')[0].lower()
 
         for frame in page.frames:
             try:
@@ -292,7 +292,7 @@ async def capture_ads(context, page, env, gallery, page_type):
                         else:
                             text_val = clean_txt
                         
-                        print(f"✅ {prefix} [{attempt}/30회차] {pos} (새로운 소재 발견! 추가 완료)")
+                        print(f"✅ {prefix} [{attempt}/35회차] {pos} (새로운 소재 발견! 추가 완료)")
                         collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": clean_final, "img": clean_img, "text": text_val})
             except: continue
     return collected
