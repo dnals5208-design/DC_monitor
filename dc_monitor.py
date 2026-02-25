@@ -11,12 +11,12 @@ SERVICE_ACCOUNT_FILE = 'service_account2020.json'
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
 ALL_GALLERIES = [
-    {"name": "자격증갤러리","pc":"https://gall.dcinside.com/coq","mo":"https://m.dcinside.com/board/coq"},
-    {"name": "편입갤러리","pc":"https://gall.dcinside.com/admission","mo":"https://m.dcinside.com/board/admission"},
-    {"name": "정병권갤러리","pc":"https://gall.dcinside.com/jeongbyeongkwon","mo":"https://m.dcinside.com/board/jeongbyeongkwon"},
-    {"name": "학점은행제 갤러리","pc":"https://gall.dcinside.com/acbs","mo":"https://m.dcinside.com/board/acbs"},
+    {"name": "자격증갤러리","pc":"https://gall.dcinside.com/board/lists/?id=coq","mo":"https://m.dcinside.com/board/coq"},
+    {"name": "편입갤러리","pc":"https://gall.dcinside.com/board/lists/?id=admission","mo":"https://m.dcinside.com/board/admission"},
+    {"name": "정병권갤러리","pc":"https://gall.dcinside.com/mgallery/board/lists/?id=jeongbyeongkwon","mo":"https://m.dcinside.com/board/jeongbyeongkwon"},
+    {"name": "학점은행제갤러리","pc":"https://gall.dcinside.com/board/lists/?id=acbs","mo":"https://m.dcinside.com/board/acbs"},
     {"name": "4년제대학갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=4year_university", "mo": "https://m.dcinside.com/board/4year_university"},
-    {"name": "법학전문대학원갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists?id=lawschool", "mo": "https://m.dcinside.com/board/lawschool"},
+    {"name": "법학전문대학원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=lawschool", "mo": "https://m.dcinside.com/board/lawschool"},
     {"name": "공무원갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=government_new1", "mo": "https://m.dcinside.com/board/government_new1"},
     {"name": "군무원갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=soider", "mo": "https://m.dcinside.com/board/soider"},
     {"name": "공인중개사갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=bokdukbang", "mo": "https://m.dcinside.com/board/bokdukbang"},
@@ -25,14 +25,14 @@ ALL_GALLERIES = [
     {"name": "행정사갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=hangjungsa", "mo": "https://m.dcinside.com/board/hangjungsa"},
     {"name": "소방갤러리", "pc": "https://gall.dcinside.com/mgallery/board/lists/?id=firefighter", "mo": "https://m.dcinside.com/board/firefighter"},
     {"name": "순경갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=policeofficer", "mo": "https://m.dcinside.com/board/policeofficer"},
-    {"name": "임용고시갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=tce", "mo": "https://m.dcinside.com/board/tce"},
+    {"name": "임용갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=tce", "mo": "https://m.dcinside.com/board/tce"},
     {"name": "토익갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=toeic", "mo": "https://m.dcinside.com/board/toeic"},
-    {"name": "일어갤러리", "pc": "https://gall.dcinside.com/board/lists?id=japanese", "mo": "https://m.dcinside.com/board/japanese"},
-    {"name": "영어갤러리", "pc": "https://gall.dcinside.com/board/lists?id=English", "mo": "https://m.dcinside.com/board/English"},
-    {"name": "영어회화갤러리", "pc": "https://gall.dcinside.com/board/lists?id=ec", "mo": "https://m.dcinside.com/board/ec"},
+    {"name": "일어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=japanese", "mo": "https://m.dcinside.com/board/japanese"},
+    {"name": "영어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=English", "mo": "https://m.dcinside.com/board/English"},
+    {"name": "영어회화갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=ec", "mo": "https://m.dcinside.com/board/ec"},
     {"name": "중국어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=chinese", "mo": "https://m.dcinside.com/board/chinese"},
-    {"name": "세무사갤러리","pc":"https://gall.dcinside.com/mgallery/board/lists/?id=cta","mo":"https://m.dcinside.com/board/cta"},
-    {"name": "회계사갤러리","pc":"https://gall.dcinside.com/mgallery/board/lists/?id=cpa","mo":"https://m.dcinside.com/board/cpa"}
+    {"name": "세무사갤러리","pc":"https://gall.dcinside.com/board/lists/?id=cta","mo":"https://m.dcinside.com/board/cta"},
+    {"name": "회계사갤러리","pc":"https://gall.dcinside.com/board/lists/?id=cpa","mo":"https://m.dcinside.com/board/cpa"}
 ]
 
 CHUNK_INDEX = int(os.getenv("CHUNK_INDEX", 0))
@@ -148,7 +148,10 @@ async def block_resources(route):
     else: await route.continue_()
 
 async def capture_ads(context, page, env, gallery, page_type):
-    collected, seen = [], set()
+    collected = []
+    
+    # 🔥 핵심 수정 1: 롤링 배너를 잡기 위해 seen(본 광고 기록)을 반복문 바깥으로 뺐습니다.
+    seen = set() 
     
     KST = timezone(timedelta(hours=9))
     today = datetime.now(KST).strftime("%Y-%m-%d")
@@ -156,10 +159,10 @@ async def capture_ads(context, page, env, gallery, page_type):
     attempt = 0
     prefix = f"[서버 {CHUNK_INDEX+1}|{env}|{gallery[:4]}|{page_type}]"
     
-    # 🔥 목표 수집 개수 10개, 최대 15회 시도로 완벽하게 원복했습니다.
-    while len(collected) < 10 and attempt < 15:
-        attempt += 1; found_ad_in_this_round = False
-        ad_count_in_round = 0
+    # 🔥 핵심 수정 2: 개수 제한(len(collected) < 10)을 풀고, 무조건 6번을 끈질기게 새로고침합니다.
+    while attempt < 6:
+        attempt += 1
+        
         try:
             await page.reload(wait_until="load", timeout=12000)
             await asyncio.sleep(2)
@@ -174,10 +177,8 @@ async def capture_ads(context, page, env, gallery, page_type):
         base_page_url = page.url.split('#')[0].split('?')[0].lower()
 
         for frame in page.frames:
-            if len(collected) >= 10: break 
             try:
                 for ad in await frame.locator("a").all():
-                    if len(collected) >= 10: break 
                     
                     raw_href_attr = await ad.get_attribute("href") or ""
                     clean_href_attr = raw_href_attr.strip().lower()
@@ -267,38 +268,39 @@ async def capture_ads(context, page, env, gallery, page_type):
                     if not is_real_ad: 
                         continue
 
-                    found_ad_in_this_round = True
-                    key = clean_img or raw_href
-                    if key not in seen:
-                        seen.add(key)
-                        ad_count_in_round += 1
+                    # 🔥 핵심 수정 3: 위치 + 이미지 + 최종URL이 모두 조합된 고유 서명을 만듭니다.
+                    final_url = ""
+                    if not raw_href.startswith("javascript") and raw_href != "#" and "__click__" not in raw_href.lower():
+                        final_url = await get_final_landing_url(context, raw_href, base_page_url)
+                    else:
+                        final_url = raw_href
                         
-                        final_url = ""
-                        if not raw_href.startswith("javascript") and raw_href != "#" and "__click__" not in raw_href.lower():
-                            final_url = await get_final_landing_url(context, raw_href, base_page_url)
-                        else:
-                            final_url = raw_href
-                            
-                        clean_final = final_url.strip()
+                    clean_final = final_url.strip()
+                    
+                    if clean_final.endswith("#") or "/board/lists" in clean_final or "dcad" in clean_final:
+                        continue 
                         
-                        if clean_final.endswith("#") or "/board/lists" in clean_final or "dcad" in clean_final:
-                            continue 
-                            
-                        clean_final = clean_final.replace("__CLICK__", "").replace("__click__", "")
-                        if not clean_final or clean_final.lower() in ["null", "#", "http://null", "https://null"]:
-                            clean_final = "랜딩 URL 없음 (클릭 이벤트)"
-                        if "nstatic.dcinside.com" in clean_final:
-                            clean_final = "랜딩 URL 없음 (이미지 서버)"
-                        
-                        has_img = bool(clean_img)
-                        pos = get_korean_position(env, page_type, raw_pos, has_img, raw_href, clean_href + " " + clean_final)
+                    clean_final = clean_final.replace("__CLICK__", "").replace("__click__", "")
+                    if not clean_final or clean_final.lower() in ["null", "#", "http://null", "https://null"]:
+                        clean_final = "랜딩 URL 없음 (클릭 이벤트)"
+                    if "nstatic.dcinside.com" in clean_final:
+                        clean_final = "랜딩 URL 없음 (이미지 서버)"
+                    
+                    has_img = bool(clean_img)
+                    pos = get_korean_position(env, page_type, raw_pos, has_img, raw_href, clean_href + " " + clean_final)
+                    
+                    # 서명이 완전히 새로운 광고일 때만 수집합니다.
+                    ad_signature = f"{pos}|{clean_img}|{clean_final}"
+                    
+                    if ad_signature not in seen:
+                        seen.add(ad_signature)
                         
                         if has_img and not clean_txt:
                             text_val = "이미지 배너"
                         else:
                             text_val = clean_txt
                         
-                        print(f"✅ {prefix} [{attempt}회차 새로고침] {pos} (현재 총 {len(collected)+1}/10개 수집)")
+                        print(f"✅ {prefix} [{attempt}회차 새로고침] {pos} (새로운 롤링배너 발견!)")
                         collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": clean_final, "img": clean_img, "text": text_val})
             except: continue
     return collected
