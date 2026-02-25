@@ -150,19 +150,16 @@ async def block_resources(route):
 async def capture_ads(context, page, env, gallery, page_type):
     collected = []
     
-    # 🔥 핵심 수정 1: 롤링 배너를 잡기 위해 seen(본 광고 기록)을 반복문 바깥으로 뺐습니다.
+    # 🔥 핵심 로직 수정: 15번 새로고침하는 동안 중복을 계속 기억하기 위해 바깥으로 뺐습니다.
     seen = set() 
     
     KST = timezone(timedelta(hours=9))
     today = datetime.now(KST).strftime("%Y-%m-%d")
     
-    attempt = 0
     prefix = f"[서버 {CHUNK_INDEX+1}|{env}|{gallery[:4]}|{page_type}]"
     
-    # 🔥 핵심 수정 2: 개수 제한(len(collected) < 10)을 풀고, 무조건 6번을 끈질기게 새로고침합니다.
-    while attempt < 6:
-        attempt += 1
-        
+    # 🔥 핵심 로직 수정: 10개 찾았다고 도망가지 않고 무조건 15번을 꽉 채워 새로고침합니다.
+    for attempt in range(1, 16):
         try:
             await page.reload(wait_until="load", timeout=12000)
             await asyncio.sleep(2)
@@ -268,7 +265,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                     if not is_real_ad: 
                         continue
 
-                    # 🔥 핵심 수정 3: 위치 + 이미지 + 최종URL이 모두 조합된 고유 서명을 만듭니다.
                     final_url = ""
                     if not raw_href.startswith("javascript") and raw_href != "#" and "__click__" not in raw_href.lower():
                         final_url = await get_final_landing_url(context, raw_href, base_page_url)
@@ -289,18 +285,18 @@ async def capture_ads(context, page, env, gallery, page_type):
                     has_img = bool(clean_img)
                     pos = get_korean_position(env, page_type, raw_pos, has_img, raw_href, clean_href + " " + clean_final)
                     
-                    # 서명이 완전히 새로운 광고일 때만 수집합니다.
+                    # 🔥 핵심 로직 수정: 위치 + 이미지 + URL 조합이 15번 새로고침 동안 처음 보는 조합일 때만 시트에 넣습니다.
                     ad_signature = f"{pos}|{clean_img}|{clean_final}"
                     
                     if ad_signature not in seen:
-                        seen.add(ad_signature)
+                        seen.add(ad_signature) # 15번 도는 동안 다시 안 적게 기억해둡니다.
                         
                         if has_img and not clean_txt:
                             text_val = "이미지 배너"
                         else:
                             text_val = clean_txt
                         
-                        print(f"✅ {prefix} [{attempt}회차 새로고침] {pos} (새로운 롤링배너 발견!)")
+                        print(f"✅ {prefix} [{attempt}/15회차] {pos} (새로운 소재 발견! 추가 완료)")
                         collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": clean_final, "img": clean_img, "text": text_val})
             except: continue
     return collected
