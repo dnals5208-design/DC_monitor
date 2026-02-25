@@ -150,7 +150,6 @@ async def block_resources(route):
 async def capture_ads(context, page, env, gallery, page_type):
     collected = []
     
-    # 🔥 핵심 로직 수정: 15번 새로고침하는 동안 중복을 계속 기억하기 위해 바깥으로 뺐습니다.
     seen = set() 
     
     KST = timezone(timedelta(hours=9))
@@ -158,8 +157,8 @@ async def capture_ads(context, page, env, gallery, page_type):
     
     prefix = f"[서버 {CHUNK_INDEX+1}|{env}|{gallery[:4]}|{page_type}]"
     
-    # 🔥 핵심 로직 수정: 10개 찾았다고 도망가지 않고 무조건 15번을 꽉 채워 새로고침합니다.
-    for attempt in range(1, 16):
+    # 🔥 수정: 25번을 꽉 채워 새로고침합니다.
+    for attempt in range(1, 26):
         try:
             await page.reload(wait_until="load", timeout=12000)
             await asyncio.sleep(2)
@@ -285,18 +284,17 @@ async def capture_ads(context, page, env, gallery, page_type):
                     has_img = bool(clean_img)
                     pos = get_korean_position(env, page_type, raw_pos, has_img, raw_href, clean_href + " " + clean_final)
                     
-                    # 🔥 핵심 로직 수정: 위치 + 이미지 + URL 조합이 15번 새로고침 동안 처음 보는 조합일 때만 시트에 넣습니다.
                     ad_signature = f"{pos}|{clean_img}|{clean_final}"
                     
                     if ad_signature not in seen:
-                        seen.add(ad_signature) # 15번 도는 동안 다시 안 적게 기억해둡니다.
+                        seen.add(ad_signature)
                         
                         if has_img and not clean_txt:
                             text_val = "이미지 배너"
                         else:
                             text_val = clean_txt
                         
-                        print(f"✅ {prefix} [{attempt}/15회차] {pos} (새로운 소재 발견! 추가 완료)")
+                        print(f"✅ {prefix} [{attempt}/25회차] {pos} (새로운 소재 발견! 추가 완료)")
                         collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": clean_final, "img": clean_img, "text": text_val})
             except: continue
     return collected
