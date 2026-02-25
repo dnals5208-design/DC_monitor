@@ -127,13 +127,11 @@ async def get_final_landing_url(context, redirect_url, referer_url):
         await temp.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "media", "font", "stylesheet"] else route.continue_())
         
         try:
-            # 🔥 최적화 2: 랜딩 페이지 추적 타임아웃을 5초에서 3초로 단축하여 대기 병목 해소
-            await temp.goto(redirect_url, referer=referer_url, wait_until="commit", timeout=3000)
+            await temp.goto(redirect_url, referer=referer_url, wait_until="commit", timeout=5000)
         except:
             pass 
             
-        # 🔥 최적화 2: 25회 대기 루프를 15회(최대 3초)로 단축
-        for _ in range(15):
+        for _ in range(25):
             current_url = temp.url
             if "addc.dc" not in current_url and "netinsight" not in current_url and current_url != "about:blank":
                 break
@@ -157,30 +155,20 @@ async def capture_ads(context, page, env, gallery, page_type):
     today = datetime.now(KST).strftime("%Y-%m-%d")
     prefix = f"[서버 {CHUNK_INDEX+1}|{env}|{gallery[:4]}|{page_type}]"
     
-    # 해당 페이지(리스트 또는 본문)의 진짜 목적지 URL 기억
-    target_url = page.url 
+    base_page_url = page.url.split('#')[0].split('?')[0].lower()
     
-    # 🔥 25번 롤링 꽉 채우기
-    for attempt in range(1, 26):
+    # 🔥 군더더기 싹 빼고 30회 + 쾌속 스크롤만 유지
+    for attempt in range(1, 31):
         try:
-            # 🔥 최적화 1 & 3: 8회차마다 메모리 강제 샤워 (about:blank) 및 무조건 goto로 명확하게 진입
-            if attempt > 1 and attempt % 8 == 0:
-                try: await page.goto("about:blank", timeout=3000)
-                except: pass
-            
-            await page.goto(target_url, wait_until="load", timeout=12000)
-            
-            await asyncio.sleep(1.5)
+            await page.reload(wait_until="load", timeout=12000)
+            await asyncio.sleep(2)
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 3);")
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 1.5);")
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-            await asyncio.sleep(0.8)
-        except: 
-            pass
-
-        base_page_url = target_url.split('#')[0].split('?')[0].lower()
+            await asyncio.sleep(1)
+        except: pass
 
         for frame in page.frames:
             try:
@@ -304,7 +292,7 @@ async def capture_ads(context, page, env, gallery, page_type):
                         else:
                             text_val = clean_txt
                         
-                        print(f"✅ {prefix} [{attempt}/25회차] {pos} (새로운 소재 발견! 추가 완료)")
+                        print(f"✅ {prefix} [{attempt}/30회차] {pos} (새로운 소재 발견! 추가 완료)")
                         collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": clean_final, "img": clean_img, "text": text_val})
             except: continue
     return collected
