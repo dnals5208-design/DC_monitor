@@ -27,9 +27,9 @@ ALL_GALLERIES = [
     {"name": "순경갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=policeofficer", "mo": "https://m.dcinside.com/board/policeofficer"},
     {"name": "임용갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=tce", "mo": "https://m.dcinside.com/board/tce"},
     {"name": "토익갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=toeic", "mo": "https://m.dcinside.com/board/toeic"},
-    {"name": "일어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=japanese", "mo": "https://m.dcinside.com/board/japanese"},
-    {"name": "영어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=English", "mo": "https://m.dcinside.com/board/English"},
-    {"name": "영어회화갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=ec", "mo": "https://m.dcinside.com/board/ec"},
+    {"name": "일어갤러리", "pc": "https://gall.dcinside.com/board/lists?id=japanese", "mo": "https://m.dcinside.com/board/japanese"},
+    {"name": "영어갤러리", "pc": "https://gall.dcinside.com/board/lists?id=English", "mo": "https://m.dcinside.com/board/English"},
+    {"name": "영어회화갤러리", "pc": "https://gall.dcinside.com/board/lists?id=ec", "mo": "https://m.dcinside.com/board/ec"},
     {"name": "중국어갤러리", "pc": "https://gall.dcinside.com/board/lists/?id=chinese", "mo": "https://m.dcinside.com/board/chinese"},
     {"name": "세무사갤러리","pc":"https://gall.dcinside.com/board/lists/?id=cta","mo":"https://m.dcinside.com/board/cta"},
     {"name": "회계사갤러리","pc":"https://gall.dcinside.com/board/lists/?id=cpa","mo":"https://m.dcinside.com/board/cpa"}
@@ -80,13 +80,10 @@ def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
         try:
             parts = target_url.split('/')
             last_part = parts[-1] 
-            
             if '@' in last_part:
                 page_str, pos_gallery = last_part.split('@', 1)
                 pos_str = pos_gallery.split('_')[0]
-                
                 page_kr = "리스트" if page_str == "list" else "본문"
-                
                 if pos_str == "top": pos_kr = "상단배너"
                 elif pos_str == "middle": pos_kr = "중단배너"
                 elif pos_str in ["bottom", "reply"]: pos_kr = "하단배너"
@@ -95,18 +92,14 @@ def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
                 elif pos_str == "auto": pos_kr = "짤방배너"
                 elif "icon" in pos_str or "float" in pos_str: pos_kr = "아이콘배너"
                 else: pos_kr = "배너"
-                
                 return f"{page_kr} {pos_kr}"
-        except:
-            pass 
+        except: pass 
             
     raw = (str(raw_pos) + " " + str(urls_text)).lower() 
-    
     if not is_image: return "텍스트배너"
     if "icon" in raw or "float" in raw or "pop-layer" in raw: return "아이콘배너"
     
     page_kr = "리스트" if page_type == "리스트" else "본문"
-    
     if env == "PC":
         if page_type == "본문": 
             return f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 게시글배너"
@@ -125,11 +118,9 @@ async def get_final_landing_url(context, redirect_url, referer_url):
     try:
         temp = await context.new_page()
         await temp.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "media", "font", "stylesheet"] else route.continue_())
-        
         try:
             await temp.goto(redirect_url, referer=referer_url, wait_until="commit", timeout=5000)
-        except:
-            pass 
+        except: pass 
             
         for _ in range(25):
             current_url = temp.url
@@ -140,8 +131,7 @@ async def get_final_landing_url(context, redirect_url, referer_url):
         final_url = temp.url
         await temp.close()
         return final_url
-    except: 
-        return redirect_url
+    except: return redirect_url
 
 async def block_resources(route):
     if route.request.resource_type in ["font", "media"]: await route.abort()
@@ -153,10 +143,15 @@ async def capture_ads(context, page, env, gallery, page_type):
     
     KST = timezone(timedelta(hours=9))
     today = datetime.now(KST).strftime("%Y-%m-%d")
-    prefix = f"[서버 {CHUNK_INDEX+1}|{env}|{gallery[:4]}|{page_type}]"
+    prefix = f"[{env}|{gallery[:4]}|{page_type}]"
     
-    # 🔥 모든 군더더기 싹 제거! 단순 무식하게 딱 35번만 쌩쌩 돌립니다.
-    for attempt in range(1, 36):
+    valid_attempts = 0  # 진짜 직판 광고가 최소 1개 이상 뜬 유효 횟수
+    total_attempts = 0  # 구글/크리테오 포함 전체 새로고침 횟수
+    
+    while valid_attempts < 35 and total_attempts < 70:
+        total_attempts += 1
+        found_dc_ad_in_this_round = False # 이 턴에 진짜 광고가 1개라도 있었나?
+        
         try:
             await page.reload(wait_until="load", timeout=12000)
             await asyncio.sleep(2)
@@ -239,28 +234,27 @@ async def capture_ads(context, page, env, gallery, page_type):
 
                     if clean_txt:
                         clean_txt = re.sub(r'^(AD|ad)\s*', '', clean_txt).strip()
-                    
                     if clean_txt in ["광고안내", "갤러리", "이미지 배너", "null", "dcinside.com"]:
                         clean_txt = ""
-
                     if not clean_img and not clean_txt: continue
 
+                    # 🚨 구글/크리테오 등 외부 네트워크 배너일 경우 (시트에 안 담고 패스)
                     external_ad_networks = ["google", "adsrvr", "criteo", "taboola", "doubleclick", "adnxs", "smartadserver", "naver.com", "ader.naver.com", "nclick", "kakao", "daum", "mobon", "exelbid"]
                     if any(k in clean_href for k in external_ad_networks): continue
                     
                     junk_images = ["close", "x_btn", "traffic_", "default_banner", "noimage", "icon", "btn_ad_close"]
                     if clean_img and any(j in clean_img.lower() for j in junk_images): continue
 
+                    # 🚨 디시 직판 광고일 경우 (해커스, 메가 등)
                     is_real_ad = False
-                    if any(x in clean_href for x in ["addc.dc", "netinsight", "toast"]):
-                        is_real_ad = True
-                    elif clean_img and "/ad/" in clean_img.lower() and "traffic_" not in clean_img.lower():
-                        is_real_ad = True
-                    elif any(utm in clean_href for utm in ["utm_source=dc", "ad_dc", "utm_medium=display", "utm_medium=banner", "utm_campaign=traffic"]):
+                    if any(x in clean_href for x in ["addc.dc", "netinsight", "toast", "utm_source"]):
                         is_real_ad = True
                         
                     if not is_real_ad: 
                         continue
+                        
+                    # 🔥 구글 광고를 거르고 여기까지 무사히 내려왔다면 직판 광고가 존재한다는 뜻입니다!
+                    found_dc_ad_in_this_round = True
 
                     final_url = ""
                     if not raw_href.startswith("javascript") and raw_href != "#" and "__click__" not in raw_href.lower():
@@ -284,35 +278,34 @@ async def capture_ads(context, page, env, gallery, page_type):
                     
                     ad_signature = f"{pos}|{clean_img}|{clean_final}"
                     
+                    # 중복 제외하고 새로운 배너면 추가
                     if ad_signature not in seen:
                         seen.add(ad_signature)
-                        
-                        if has_img and not clean_txt:
-                            text_val = "이미지 배너"
-                        else:
-                            text_val = clean_txt
-                        
-                        print(f"✅ {prefix} [{attempt}/35회차] {pos} (새로운 소재 발견! 추가 완료)")
+                        text_val = "이미지 배너" if has_img and not clean_txt else clean_txt
                         collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": clean_final, "img": clean_img, "text": text_val})
             except: continue
+            
+        # 🔥 한 번의 새로고침 사이클이 끝난 후 판단합니다.
+        # 구글 광고가 있든 없든, 직판 광고가 1개라도 페이지에 있었다면 유효한 1회차로 카운트!
+        if found_dc_ad_in_this_round:
+            valid_attempts += 1
+            print(f"✅ {prefix} [유효 {valid_attempts}/35회차] (직판 광고 확인 완료)")
+        else:
+            print(f"⚠️ {prefix} [전체 구글광고 덮임] 카운트 미차감 (현재 유효: {valid_attempts}/35, 누적 시도: {total_attempts})")
+            
     return collected
 
 async def task_runner(sem, ctx, env, tgt, queue):
     async with sem:
         await asyncio.sleep(random.uniform(0, 1.5))
         page = await ctx.new_page()
-        
         page.on("dialog", lambda dialog: asyncio.create_task(dialog.accept()))
-        
         await page.route("**/*", block_resources)
         try:
             target_url = tgt['pc'] if env=="PC" else tgt['mo']
-            
             gallery_id = ""
-            if "id=" in target_url:
-                gallery_id = target_url.split("id=")[-1].split("&")[0]
-            else:
-                gallery_id = target_url.split("/")[-1]
+            if "id=" in target_url: gallery_id = target_url.split("id=")[-1].split("&")[0]
+            else: gallery_id = target_url.split("/")[-1]
 
             await page.goto(target_url, wait_until="load", timeout=15000)
             await asyncio.sleep(1.5)
@@ -322,25 +315,15 @@ async def task_runner(sem, ctx, env, tgt, queue):
             keyword = tgt['name'].replace("갤러리", "").replace(" ", "").strip()
             
             bounce_urls = ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini"]
-            
             if keyword not in page_title.replace(" ", "") or current_url in bounce_urls:
                 if env == "PC":
-                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 잘못된 주소 감지. 우회 시작...")
-                    test_urls = [
-                        f"https://gall.dcinside.com/board/lists/?id={gallery_id}",
-                        f"https://gall.dcinside.com/mgallery/board/lists/?id={gallery_id}",
-                        f"https://gall.dcinside.com/mini/board/lists/?id={gallery_id}"
-                    ]
+                    test_urls = [f"https://gall.dcinside.com/board/lists/?id={gallery_id}", f"https://gall.dcinside.com/mgallery/board/lists/?id={gallery_id}", f"https://gall.dcinside.com/mini/board/lists/?id={gallery_id}"]
                     for t_url in test_urls:
                         await page.goto(t_url, wait_until="load", timeout=12000)
                         await asyncio.sleep(1)
                         if keyword in (await page.title()).replace(" ", ""): break
                 elif env == "MO":
-                    print(f"⚠️ [서버 {CHUNK_INDEX+1}|{tgt['name']}] 잘못된 주소 감지. 우회 시작...")
-                    test_urls = [
-                        f"https://m.dcinside.com/board/{gallery_id}",
-                        f"https://m.dcinside.com/mini/{gallery_id}"
-                    ]
+                    test_urls = [f"https://m.dcinside.com/board/{gallery_id}", f"https://m.dcinside.com/mini/{gallery_id}"]
                     for t_url in test_urls:
                         await page.goto(t_url, wait_until="load", timeout=12000)
                         await asyncio.sleep(1)
@@ -358,17 +341,13 @@ async def task_runner(sem, ctx, env, tgt, queue):
 
 async def main():
     if not TARGET_GALLERIES: return
-    
-    gallery_names = [g['name'] for g in TARGET_GALLERIES]
-    print(f"🔥 [서버 {CHUNK_INDEX+1}] 가동! 할당된 갤러리 {len(TARGET_GALLERIES)}개: {', '.join(gallery_names)}")
-    
     gc = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
     ws = gc.open_by_url(SHEET_URL).get_worksheet(0)
     
     async with async_playwright() as p:
+        # 헤드리스 켜서 다시 쌩쌩하게!
         browser = await p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-web-security"])
         pc_ctx, mo_ctx = await browser.new_context(viewport={"width": 1920, "height": 1080}), await browser.new_context(**p.devices['iPhone 13'])
-        
         sem, queue = asyncio.Semaphore(5), asyncio.Queue()
         uploader = asyncio.create_task(uploader_worker(queue, ws))
 
@@ -378,6 +357,6 @@ async def main():
         
         await queue.put(None)
         await uploader
-        print(f"🎉 [서버 {CHUNK_INDEX+1}] 수집 종료!")
+        print(f"🎉 수집 종료!")
 
 if __name__ == "__main__": asyncio.run(main())
