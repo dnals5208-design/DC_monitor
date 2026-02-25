@@ -75,7 +75,6 @@ async def uploader_worker(queue, ws):
 
 def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
     target_url = raw_href.split('?')[0].lower() 
-    
     if "click/dcinside" in target_url:
         try:
             parts = target_url.split('/')
@@ -145,12 +144,13 @@ async def capture_ads(context, page, env, gallery, page_type):
     today = datetime.now(KST).strftime("%Y-%m-%d")
     prefix = f"[{env}|{gallery[:4]}|{page_type}]"
     
-    valid_attempts = 0  # 진짜 직판 광고가 최소 1개 이상 뜬 유효 횟수
-    total_attempts = 0  # 구글/크리테오 포함 전체 새로고침 횟수
+    valid_attempts = 0  
+    total_attempts = 0  
     
-    while valid_attempts < 35 and total_attempts < 70:
+    # 🔥 유효 40회 달성 또는 최대 80회까지 시도
+    while valid_attempts < 40 and total_attempts < 80:
         total_attempts += 1
-        found_dc_ad_in_this_round = False # 이 턴에 진짜 광고가 1개라도 있었나?
+        found_dc_ad_in_this_round = False 
         
         try:
             await page.reload(wait_until="load", timeout=12000)
@@ -238,14 +238,12 @@ async def capture_ads(context, page, env, gallery, page_type):
                         clean_txt = ""
                     if not clean_img and not clean_txt: continue
 
-                    # 🚨 구글/크리테오 등 외부 네트워크 배너일 경우 (시트에 안 담고 패스)
                     external_ad_networks = ["google", "adsrvr", "criteo", "taboola", "doubleclick", "adnxs", "smartadserver", "naver.com", "ader.naver.com", "nclick", "kakao", "daum", "mobon", "exelbid"]
                     if any(k in clean_href for k in external_ad_networks): continue
                     
                     junk_images = ["close", "x_btn", "traffic_", "default_banner", "noimage", "icon", "btn_ad_close"]
                     if clean_img and any(j in clean_img.lower() for j in junk_images): continue
 
-                    # 🚨 디시 직판 광고일 경우 (해커스, 메가 등)
                     is_real_ad = False
                     if any(x in clean_href for x in ["addc.dc", "netinsight", "toast", "utm_source"]):
                         is_real_ad = True
@@ -253,7 +251,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                     if not is_real_ad: 
                         continue
                         
-                    # 🔥 구글 광고를 거르고 여기까지 무사히 내려왔다면 직판 광고가 존재한다는 뜻입니다!
                     found_dc_ad_in_this_round = True
 
                     final_url = ""
@@ -278,20 +275,18 @@ async def capture_ads(context, page, env, gallery, page_type):
                     
                     ad_signature = f"{pos}|{clean_img}|{clean_final}"
                     
-                    # 중복 제외하고 새로운 배너면 추가
                     if ad_signature not in seen:
                         seen.add(ad_signature)
                         text_val = "이미지 배너" if has_img and not clean_txt else clean_txt
+                        print(f"✅ {prefix} [유효 {valid_attempts+1}/40회차] {pos} (새로운 소재 추가)")
                         collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": clean_final, "img": clean_img, "text": text_val})
             except: continue
             
-        # 🔥 한 번의 새로고침 사이클이 끝난 후 판단합니다.
-        # 구글 광고가 있든 없든, 직판 광고가 1개라도 페이지에 있었다면 유효한 1회차로 카운트!
         if found_dc_ad_in_this_round:
             valid_attempts += 1
-            print(f"✅ {prefix} [유효 {valid_attempts}/35회차] (직판 광고 확인 완료)")
+            print(f"✅ {prefix} [유효 {valid_attempts}/40회차] (직판 광고 확인 완료)")
         else:
-            print(f"⚠️ {prefix} [전체 구글광고 덮임] 카운트 미차감 (현재 유효: {valid_attempts}/35, 누적 시도: {total_attempts})")
+            print(f"⚠️ {prefix} [전체 구글광고 덮임] 카운트 미차감 (현재 유효: {valid_attempts}/40, 누적 시도: {total_attempts})")
             
     return collected
 
@@ -345,7 +340,6 @@ async def main():
     ws = gc.open_by_url(SHEET_URL).get_worksheet(0)
     
     async with async_playwright() as p:
-        # 헤드리스 켜서 다시 쌩쌩하게!
         browser = await p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-web-security"])
         pc_ctx, mo_ctx = await browser.new_context(viewport={"width": 1920, "height": 1080}), await browser.new_context(**p.devices['iPhone 13'])
         sem, queue = asyncio.Semaphore(5), asyncio.Queue()
