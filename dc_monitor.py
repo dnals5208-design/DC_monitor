@@ -113,7 +113,6 @@ def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
             if page_type == "본문": pos_result = f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 게시글배너"
             else: pos_result = f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 상단배너"
             
-    # 🔥 리스트 공지 수정: 리스트 페이지인데 이름에 '본문'이 들어가면 무조건 '리스트 공지'로 강제 변경!
     if page_type == "리스트" and "본문" in pos_result:
         return "리스트 공지"
         
@@ -161,15 +160,20 @@ async def capture_ads(context, page, env, gallery, page_type):
         found_dc_ad_in_this_round = False 
         
         try:
-            # 🔥 기존의 빠르고 쾌적한 3단계 스크롤로 완벽하게 원상복구 했습니다!
+            # 🔥 핵심 복구 1: 스크롤을 맨 위로 강제 리셋하여 짤방배너 게으른 로딩을 무조건 깨웁니다.
+            await page.evaluate("window.scrollTo(0, 0);") 
             await page.reload(wait_until="load", timeout=12000)
             await asyncio.sleep(1.5)
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 3);")
-            await asyncio.sleep(0.5)
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 1.5);")
-            await asyncio.sleep(0.5)
+            
+            # 🔥 핵심 복구 2: 짤방배너 탐색을 위한 꼼꼼한 4단계 스크롤
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 4);")
+            await asyncio.sleep(0.4)
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2);")
+            await asyncio.sleep(0.4)
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 1.2);")
+            await asyncio.sleep(0.4)
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.8)
         except: pass
 
         base_page_url = page.url.split('#')[0].split('?')[0].lower()
@@ -335,7 +339,9 @@ async def task_runner(sem, ctx, env, tgt, queue):
 
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
             
-            post = page.locator("tr.us-post:not(.notice) td.gall_tit > a:not(.reply_numbox)").first if env=="PC" else page.locator("ul.gall-detail-lst li:not(.notice) a").first
+            # 🔥 핵심 복구 3: 모바일(MO) 환경에서 본문 클릭 시 실수로 지웠던 .gall-detail-lnktit 클래스를 다시 추가하여 정확히 진입하게 했습니다.
+            post = page.locator("tr.us-post:not(.notice) td.gall_tit > a:not(.reply_numbox)").first if env=="PC" else page.locator("ul.gall-detail-lst li:not(.notice) .gall-detail-lnktit a").first
+            
             if await post.count() > 0:
                 await post.click()
                 await asyncio.sleep(2.5)
@@ -349,7 +355,6 @@ async def main():
     ws = gc.open_by_url(SHEET_URL).get_worksheet(0)
     
     async with async_playwright() as p:
-        # 🔥 완벽한 모바일 환경 위장: 갤럭시(Android Chrome) 속성을 강제로 먹여서 PC 리다이렉트를 원천 봉쇄합니다!
         pc_context_opts = {
             "viewport": {"width": 1920, "height": 1080},
             "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
