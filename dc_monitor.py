@@ -75,6 +75,8 @@ async def uploader_worker(queue, ws):
 
 def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
     target_url = raw_href.split('?')[0].lower() 
+    pos_result = ""
+    
     if "click/dcinside" in target_url:
         try:
             parts = target_url.split('/')
@@ -88,27 +90,34 @@ def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
                 elif pos_str in ["bottom", "reply"]: pos_kr = "하단배너"
                 elif pos_str == "left": pos_kr = "좌측배너"
                 elif pos_str == "right": pos_kr = "우측배너"
-                elif pos_str == "auto": pos_kr = "짤방배너"
+                elif "auto" in pos_str: pos_kr = "짤방배너"
                 elif "icon" in pos_str or "float" in pos_str: pos_kr = "아이콘배너"
                 else: pos_kr = "배너"
-                return f"{page_kr} {pos_kr}"
+                pos_result = f"{page_kr} {pos_kr}"
         except: pass 
             
-    raw = (str(raw_pos) + " " + str(urls_text)).lower() 
-    if not is_image: return "텍스트배너"
-    if "icon" in raw or "float" in raw or "pop-layer" in raw: return "아이콘배너"
-    
-    page_kr = "리스트" if page_type == "리스트" else "본문"
-    if env == "PC":
-        if page_type == "본문": 
-            return f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 게시글배너"
+    if not pos_result:
+        raw = (str(raw_pos) + " " + str(urls_text)).lower() 
+        if not is_image: return "텍스트배너"
+        if "icon" in raw or "float" in raw or "pop-layer" in raw: return "아이콘배너"
+        
+        page_kr = "리스트" if page_type == "리스트" else "본문"
+        if env == "PC":
+            if page_type == "본문": 
+                pos_result = f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 게시글배너"
+            else:
+                if "right" in raw or "wing" in raw: pos_result = f"{page_kr} 우측배너"
+                elif "left" in raw: pos_result = f"{page_kr} 좌측배너"
+                else: pos_result = f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 상단배너"
         else:
-            if "right" in raw or "wing" in raw: return f"{page_kr} 우측배너"
-            if "left" in raw: return f"{page_kr} 좌측배너"
-            return f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 상단배너"
-    else:
-        if page_type == "본문": return f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 게시글배너"
-        else: return f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 상단배너"
+            if page_type == "본문": pos_result = f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 게시글배너"
+            else: pos_result = f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 상단배너"
+            
+    # 🔥 리스트 공지 수정: 리스트 페이지인데 이름에 '본문'이 들어가면 무조건 '리스트 공지'로 강제 변경!
+    if page_type == "리스트" and "본문" in pos_result:
+        return "리스트 공지"
+        
+    return pos_result
 
 async def get_final_landing_url(context, redirect_url, referer_url):
     if not redirect_url or not redirect_url.startswith("http"): return redirect_url
@@ -147,20 +156,20 @@ async def capture_ads(context, page, env, gallery, page_type):
     valid_attempts = 0  
     total_attempts = 0  
     
-    # 🔥 유효 40회 달성 또는 최대 80회까지 시도
     while valid_attempts < 40 and total_attempts < 80:
         total_attempts += 1
         found_dc_ad_in_this_round = False 
         
         try:
+            # 🔥 기존의 빠르고 쾌적한 3단계 스크롤로 완벽하게 원상복구 했습니다!
             await page.reload(wait_until="load", timeout=12000)
-            await asyncio.sleep(2)
+            await asyncio.sleep(1.5)
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 3);")
             await asyncio.sleep(0.5)
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 1.5);")
             await asyncio.sleep(0.5)
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-            await asyncio.sleep(1)
+            await asyncio.sleep(1.0)
         except: pass
 
         base_page_url = page.url.split('#')[0].split('?')[0].lower()
@@ -326,7 +335,7 @@ async def task_runner(sem, ctx, env, tgt, queue):
 
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
             
-            post = page.locator("tr.us-post:not(.notice) td.gall_tit > a:not(.reply_numbox)").first if env=="PC" else page.locator("ul.gall-detail-lst li:not(.notice) .gall-detail-lnktit a").first
+            post = page.locator("tr.us-post:not(.notice) td.gall_tit > a:not(.reply_numbox)").first if env=="PC" else page.locator("ul.gall-detail-lst li:not(.notice) a").first
             if await post.count() > 0:
                 await post.click()
                 await asyncio.sleep(2.5)
@@ -340,8 +349,22 @@ async def main():
     ws = gc.open_by_url(SHEET_URL).get_worksheet(0)
     
     async with async_playwright() as p:
+        # 🔥 완벽한 모바일 환경 위장: 갤럭시(Android Chrome) 속성을 강제로 먹여서 PC 리다이렉트를 원천 봉쇄합니다!
+        pc_context_opts = {
+            "viewport": {"width": 1920, "height": 1080},
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        }
+        mo_context_opts = {
+            "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-G991N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
+            "viewport": {"width": 390, "height": 844},
+            "is_mobile": True,
+            "has_touch": True
+        }
+        
         browser = await p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-web-security"])
-        pc_ctx, mo_ctx = await browser.new_context(viewport={"width": 1920, "height": 1080}), await browser.new_context(**p.devices['iPhone 13'])
+        pc_ctx = await browser.new_context(**pc_context_opts)
+        mo_ctx = await browser.new_context(**mo_context_opts)
+        
         sem, queue = asyncio.Semaphore(5), asyncio.Queue()
         uploader = asyncio.create_task(uploader_worker(queue, ws))
 
