@@ -153,8 +153,10 @@ async def block_resources(route):
     if route.request.resource_type in ["font", "media"]: await route.abort()
     else: await route.continue_()
 
-# --- 🔍 광고 탐색 핵심 엔진 (MO 강화: 60회 유효 롤링 + 7단계 스크롤 + iframe 대기) ---
-async def capture_ads(context, page, env, gallery, page_type, browser, context_opts):
+# --- 🔍 광고 탐색 핵심 엔진 ---
+# MO 본문짤방은 페이지 최상단(제목 바로 아래)에 위치 → 스크롤 전 최상단 대기가 핵심
+# PC: 40회 유효 / 80회 최대, MO: 50회 유효 / 100회 최대
+async def capture_ads(context, page, env, gallery, page_type):
     collected = []
     seen = set()
 
@@ -162,21 +164,18 @@ async def capture_ads(context, page, env, gallery, page_type, browser, context_o
     today = datetime.now(KST).strftime("%Y-%m-%d")
     prefix = f"[{env}|{gallery[:4]}|{page_type}]"
 
-    # 🔥 MO는 60회 유효 / 120회 최대, PC는 40회 유효 / 80회 최대
-    max_valid = 60 if env == "MO" else 40
+    max_valid = 50 if env == "MO" else 40
     max_total = max_valid * 2
 
     valid_attempts = 0
     total_attempts = 0
-    context_recreate_count = 0  # 컨텍스트 재생성 횟수 추적
 
     while valid_attempts < max_valid and total_attempts < max_total:
 
-        # 🔥 10회마다 쿠키 + localStorage/sessionStorage 완전 초기화
+        # 🔥 10회마다 쿠키 + localStorage/sessionStorage 완전 초기화 (프리퀀시 캡 우회)
         if total_attempts > 0 and total_attempts % 10 == 0:
             try:
                 await context.clear_cookies()
-                # localStorage, sessionStorage 도 함께 초기화
                 await page.evaluate("""() => {
                     try { window.localStorage.clear(); } catch(e) {}
                     try { window.sessionStorage.clear(); } catch(e) {}
@@ -184,48 +183,25 @@ async def capture_ads(context, page, env, gallery, page_type, browser, context_o
                 print(f"🔄 {prefix} [세션 갱신] 쿠키+스토리지 초기화 완료 ({total_attempts}회차)")
             except: pass
 
-        # 🔥 MO 전용: 15회마다 context 자체를 재생성하여 서버 측 세션 추적 완전 우회
-        if env == "MO" and total_attempts > 0 and total_attempts % 15 == 0:
-            try:
-                current_url = page.url
-                await page.close()
-                context_recreate_count += 1
-                new_ctx = await browser.new_context(**context_opts)
-                context = new_ctx
-                page = await context.new_page()
-                page.on("dialog", lambda dialog: asyncio.create_task(dialog.accept()))
-                await page.route("**/*", block_resources)
-                await page.goto(current_url, wait_until="load", timeout=15000)
-                print(f"🔄🔄 {prefix} [컨텍스트 재생성 #{context_recreate_count}] 완전 새 세션으로 교체! ({total_attempts}회차)")
-            except Exception as e:
-                print(f"⚠️ {prefix} 컨텍스트 재생성 실패: {e}")
-
         total_attempts += 1
         found_dc_ad_in_this_round = False
 
         try:
+            # 📌 스크롤 리셋 → 리로드 → 최상단 대기 (짤방 배너 로딩 보장)
             await page.evaluate("window.scrollTo(0, 0);")
             await page.reload(wait_until="load", timeout=12000)
 
-            # 🔥 MO 본문: 7단계 초정밀 스크롤 (15% → 30% → 45% → 60% → 75% → 90% → 100%)
-            if page_type == "본문" and env == "MO":
-                await asyncio.sleep(1.2)
-                for pct in [0.15, 0.30, 0.45, 0.60, 0.75, 0.90, 1.0]:
-                    await page.evaluate(f"window.scrollTo(0, document.body.scrollHeight * {pct});")
-                    await asyncio.sleep(0.6)
-                # iframe 로드 대기: 모든 프레임이 로드될 때까지 기다림
-                for frame in page.frames:
-                    try:
-                        await frame.wait_for_load_state("domcontentloaded", timeout=3000)
-                    except: pass
-                await asyncio.sleep(0.8)
-            elif page_type == "본문" and env == "PC":
-                # PC 본문도 5단계 정밀 스크롤로 강화
-                await asyncio.sleep(1.0)
-                for pct in [0.2, 0.4, 0.6, 0.8, 1.0]:
-                    await page.evaluate(f"window.scrollTo(0, document.body.scrollHeight * {pct});")
-                    await asyncio.sleep(0.4)
-                await asyncio.sleep(0.6)
+            if page_type == "본문":
+                # 🔥 핵심: 최상단(0%)에서 2초 대기 → 짤방 배너 iframe 로딩 완료 보장
+                await asyncio.sleep(2.0)
+                # 중단~하단 광고를 위해 50% → 100% 2단계만 빠르게
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.5);")
+                await asyncio.sleep(0.5)
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+                await asyncio.sleep(0.5)
+                # 다시 상단으로 복귀 (짤방 배너가 뷰포트에 있어야 DOM 접근 안정)
+                await page.evaluate("window.scrollTo(0, 0);")
+                await asyncio.sleep(0.3)
             else:
                 # 리스트 페이지: 3단계 쾌속 스크롤
                 await asyncio.sleep(1.5)
@@ -370,10 +346,10 @@ async def capture_ads(context, page, env, gallery, page_type, browser, context_o
             print(f"⚠️ {prefix} [전체 구글광고 덮임] 카운트 미차감 (현재 유효: {valid_attempts}/{max_valid}, 누적 시도: {total_attempts})")
 
     print(f"🏁 {prefix} 수집 종료! 유효 {valid_attempts}/{max_valid}회, 총 시도 {total_attempts}회, 수집 소재 {len(collected)}개")
-    return collected, context, page
+    return collected
 
 # --- ⚡ 단일 갤러리+환경 작업 실행기 ---
-async def task_runner(sem, ctx, env, tgt, queue, browser, context_opts):
+async def task_runner(sem, ctx, env, tgt, queue):
     async with sem:
         await asyncio.sleep(random.uniform(0, 1.5))
         page = await ctx.new_page()
@@ -411,57 +387,46 @@ async def task_runner(sem, ctx, env, tgt, queue, browser, context_opts):
             print(f"🌐 [{env}] {tgt['name']} 접속 완료. 리스트 수집 시작!")
 
             # 📋 리스트 페이지 광고 수집
-            list_results, ctx, page = await capture_ads(ctx, page, env, tgt['name'], "리스트", browser, context_opts)
+            list_results = await capture_ads(ctx, page, env, tgt['name'], "리스트")
             for item in list_results: await queue.put(item)
 
-            # 📝 본문 페이지 광고 수집 (MO: 3개 게시글 순회, PC: 1개)
-            if env == "MO":
-                # 🔥 MO 멀티 게시글 샘플링: 최대 3개 게시글에서 각각 수집
-                post_locator = page.locator("ul.gall-detail-lst li:not(.notice) .gall-detail-lnktit a")
-                post_count = await post_locator.count()
-                num_posts = min(3, post_count)
-                post_hrefs = []
-
-                for idx in range(num_posts):
-                    try:
-                        href = await post_locator.nth(idx).get_attribute("href")
-                        if href:
-                            if not href.startswith("http"):
-                                href = "https://m.dcinside.com" + href
-                            post_hrefs.append(href)
-                    except: continue
-
-                print(f"📱 [MO] {tgt['name']} 본문 {len(post_hrefs)}개 게시글 순회 시작!")
-                for p_idx, post_href in enumerate(post_hrefs):
-                    try:
-                        await page.goto(post_href, wait_until="load", timeout=15000)
-                        await asyncio.sleep(2.5)
-                        print(f"📱 [MO] {tgt['name']} 본문 #{p_idx+1}/{len(post_hrefs)} 진입 완료")
-                        body_results, ctx, page = await capture_ads(ctx, page, env, tgt['name'], "본문", browser, context_opts)
-                        for item in body_results: await queue.put(item)
-
-                        # 다음 게시글 방문 전 리스트로 복귀
-                        if p_idx < len(post_hrefs) - 1:
-                            list_url = tgt['mo']
-                            await page.goto(list_url, wait_until="load", timeout=15000)
-                            await asyncio.sleep(1.5)
-                            # 새 리스트 페이지에서 post_locator 갱신
-                            post_locator = page.locator("ul.gall-detail-lst li:not(.notice) .gall-detail-lnktit a")
-                    except Exception as e:
-                        print(f"⚠️ [MO] {tgt['name']} 본문 #{p_idx+1} 에러: {e}")
-                        continue
-            else:
-                # PC: 기존대로 1개 게시글 진입
+            # 📝 본문 페이지 광고 수집 (href 직접 추출 → 다이렉트 진입)
+            if env == "PC":
                 post_locator = page.locator("tr.us-post:not(.notice) td.gall_tit > a:not(.reply_numbox)").first
-                if await post_locator.count() > 0:
-                    post_href = await post_locator.get_attribute("href")
-                    if post_href:
-                        if not post_href.startswith("http"):
-                            post_href = "https://gall.dcinside.com" + post_href
-                        await page.goto(post_href, wait_until="load", timeout=15000)
-                        await asyncio.sleep(2.5)
-                        body_results, ctx, page = await capture_ads(ctx, page, env, tgt['name'], "본문", browser, context_opts)
-                        for item in body_results: await queue.put(item)
+            else:
+                # 🔥 MO 셀렉터 수정: .gall-detail-lnktit 클래스는 존재하지 않음!
+                # 실제 MO 게시글 링크는 a.lt 클래스 (ul.gall-detail-lst 내부)
+                post_locator = page.locator("ul.gall-detail-lst a.lt").first
+
+            if await post_locator.count() > 0:
+                post_href = await post_locator.get_attribute("href")
+                if post_href:
+                    if not post_href.startswith("http"):
+                        base_domain = "https://gall.dcinside.com" if env == "PC" else "https://m.dcinside.com"
+                        post_href = base_domain + post_href
+
+                    # 🔥 MO 핵심 수정: PC URL이 들어왔으면 모바일 URL로 강제 변환
+                    # PC: gall.dcinside.com/board/view/?id=toeic&no=12345
+                    # MO: m.dcinside.com/board/toeic/12345
+                    if env == "MO" and "gall.dcinside.com" in post_href:
+                        try:
+                            from urllib.parse import urlparse, parse_qs
+                            parsed = urlparse(post_href)
+                            qs = parse_qs(parsed.query)
+                            g_id = qs.get("id", [gallery_id])[0]
+                            g_no = qs.get("no", [""])[0]
+                            if g_no:
+                                post_href = f"https://m.dcinside.com/board/{g_id}/{g_no}"
+                                print(f"🔄 [MO] PC URL → 모바일 URL 변환: {post_href}")
+                            else:
+                                post_href = f"https://m.dcinside.com/board/{g_id}"
+                        except:
+                            post_href = post_href.replace("gall.dcinside.com", "m.dcinside.com")
+
+                    await page.goto(post_href, wait_until="load", timeout=15000)
+                    await asyncio.sleep(2.5)
+                    body_results = await capture_ads(ctx, page, env, tgt['name'], "본문")
+                    for item in body_results: await queue.put(item)
         except Exception as e:
             print(f"⚠️ [{env}] {tgt['name']} 전체 에러: {e}")
         finally:
@@ -497,8 +462,8 @@ async def main():
         sem, queue = asyncio.Semaphore(5), asyncio.Queue()
         uploader = asyncio.create_task(uploader_worker(queue, ws))
 
-        tasks = [task_runner(sem, pc_ctx, "PC", t, queue, browser, pc_context_opts) for t in TARGET_GALLERIES] + \
-                [task_runner(sem, mo_ctx, "MO", t, queue, browser, mo_context_opts) for t in TARGET_GALLERIES]
+        tasks = [task_runner(sem, pc_ctx, "PC", t, queue) for t in TARGET_GALLERIES] + \
+                [task_runner(sem, mo_ctx, "MO", t, queue) for t in TARGET_GALLERIES]
         await asyncio.gather(*tasks)
         await browser.close()
 
