@@ -7,7 +7,8 @@ from playwright.async_api import async_playwright
 import gspread
 from datetime import datetime, timedelta, timezone
 
-SERVICE_ACCOUNT_FILE = 'service_account2020.json' 
+# --- ⚙️ 설정 ---
+SERVICE_ACCOUNT_FILE = 'service_account2020.json'
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
 
 ALL_GALLERIES = [
@@ -38,8 +39,8 @@ ALL_GALLERIES = [
 CHUNK_INDEX = int(os.getenv("CHUNK_INDEX", 0))
 TOTAL_CHUNKS = int(os.getenv("TOTAL_CHUNKS", 1))
 
-base_size = len(ALL_GALLERIES) // TOTAL_CHUNKS 
-remainder = len(ALL_GALLERIES) % TOTAL_CHUNKS   
+base_size = len(ALL_GALLERIES) // TOTAL_CHUNKS
+remainder = len(ALL_GALLERIES) % TOTAL_CHUNKS
 
 if CHUNK_INDEX < remainder:
     start_idx = CHUNK_INDEX * (base_size + 1)
@@ -50,6 +51,7 @@ else:
 
 TARGET_GALLERIES = ALL_GALLERIES[start_idx:end_idx]
 
+# --- 📊 구글 시트 안전 배치 업로드 ---
 def safe_batch_upload(ws, data_chunk):
     if not data_chunk: return
     rows = [[d['date'], d['gallery'], d['env'], d['pos'], d['url'], d['img'], d['text']] for d in data_chunk]
@@ -59,6 +61,7 @@ def safe_batch_upload(ws, data_chunk):
             time.sleep(1.5)
         except Exception: time.sleep(5)
 
+# --- 📤 비동기 업로더 워커 ---
 async def uploader_worker(queue, ws):
     buffer = []
     while True:
@@ -73,14 +76,16 @@ async def uploader_worker(queue, ws):
     if buffer:
         await asyncio.to_thread(safe_batch_upload, ws, buffer)
 
+# --- 📝 위치명 정밀 판독 (URL 파싱 + fallback) ---
 def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
-    target_url = raw_href.split('?')[0].lower() 
+    target_url = raw_href.split('?')[0].lower()
     pos_result = ""
-    
+
+    # 1차: 디시 광고 URL 구조에서 위치 파싱 (가장 정확)
     if "click/dcinside" in target_url:
         try:
             parts = target_url.split('/')
-            last_part = parts[-1] 
+            last_part = parts[-1]
             if '@' in last_part:
                 page_str, pos_gallery = last_part.split('@', 1)
                 pos_str = pos_gallery.split('_')[0]
@@ -94,16 +99,17 @@ def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
                 elif "icon" in pos_str or "float" in pos_str: pos_kr = "아이콘배너"
                 else: pos_kr = "배너"
                 pos_result = f"{page_kr} {pos_kr}"
-        except: pass 
-            
+        except: pass
+
+    # 2차: DOM 클래스명 + href 텍스트 기반 fallback
     if not pos_result:
-        raw = (str(raw_pos) + " " + str(urls_text)).lower() 
+        raw = (str(raw_pos) + " " + str(urls_text)).lower()
         if not is_image: return "텍스트배너"
         if "icon" in raw or "float" in raw or "pop-layer" in raw: return "아이콘배너"
-        
+
         page_kr = "리스트" if page_type == "리스트" else "본문"
         if env == "PC":
-            if page_type == "본문": 
+            if page_type == "본문":
                 pos_result = f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 게시글배너"
             else:
                 if "right" in raw or "wing" in raw: pos_result = f"{page_kr} 우측배너"
@@ -112,78 +118,116 @@ def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
         else:
             if page_type == "본문": pos_result = f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 게시글배너"
             else: pos_result = f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 상단배너"
-            
+
+    # 🔥 영역명 강제 정상화: 리스트에서 수집했는데 '본문'이 섞여 나오면 '리스트 공지'로 교정
     if page_type == "리스트" and "본문" in pos_result:
         return "리스트 공지"
-        
+
     return pos_result
 
+# --- 🔗 최종 랜딩 URL 추적 ---
 async def get_final_landing_url(context, redirect_url, referer_url):
     if not redirect_url or not redirect_url.startswith("http"): return redirect_url
     if "addc.dc" not in redirect_url and "netinsight" not in redirect_url: return redirect_url
-    
+
     try:
         temp = await context.new_page()
         await temp.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "media", "font", "stylesheet"] else route.continue_())
         try:
             await temp.goto(redirect_url, referer=referer_url, wait_until="commit", timeout=5000)
-        except: pass 
-            
+        except: pass
+
         for _ in range(25):
             current_url = temp.url
             if "addc.dc" not in current_url and "netinsight" not in current_url and current_url != "about:blank":
                 break
             await asyncio.sleep(0.2)
-            
+
         final_url = temp.url
         await temp.close()
         return final_url
     except: return redirect_url
 
+# --- 🚫 불필요 리소스 차단 ---
 async def block_resources(route):
     if route.request.resource_type in ["font", "media"]: await route.abort()
     else: await route.continue_()
 
-async def capture_ads(context, page, env, gallery, page_type):
+# --- 🔍 광고 탐색 핵심 엔진 (MO 강화: 60회 유효 롤링 + 7단계 스크롤 + iframe 대기) ---
+async def capture_ads(context, page, env, gallery, page_type, browser, context_opts):
     collected = []
-    seen = set() 
-    
+    seen = set()
+
     KST = timezone(timedelta(hours=9))
     today = datetime.now(KST).strftime("%Y-%m-%d")
     prefix = f"[{env}|{gallery[:4]}|{page_type}]"
-    
-    valid_attempts = 0  
-    total_attempts = 0  
-    
-    while valid_attempts < 40 and total_attempts < 80:
-        # 🔥 이슈 B 해결: 10번 돌 때마다 한 번씩 쿠키(기억)를 초기화하여 롤링 소재 강제 교체 유도
+
+    # 🔥 MO는 60회 유효 / 120회 최대, PC는 40회 유효 / 80회 최대
+    max_valid = 60 if env == "MO" else 40
+    max_total = max_valid * 2
+
+    valid_attempts = 0
+    total_attempts = 0
+    context_recreate_count = 0  # 컨텍스트 재생성 횟수 추적
+
+    while valid_attempts < max_valid and total_attempts < max_total:
+
+        # 🔥 10회마다 쿠키 + localStorage/sessionStorage 완전 초기화
         if total_attempts > 0 and total_attempts % 10 == 0:
             try:
                 await context.clear_cookies()
-                print(f"🔄 {prefix} [세션 갱신] 롤링 배너 누락 방지를 위해 쿠키를 초기화했습니다.")
+                # localStorage, sessionStorage 도 함께 초기화
+                await page.evaluate("""() => {
+                    try { window.localStorage.clear(); } catch(e) {}
+                    try { window.sessionStorage.clear(); } catch(e) {}
+                }""")
+                print(f"🔄 {prefix} [세션 갱신] 쿠키+스토리지 초기화 완료 ({total_attempts}회차)")
             except: pass
 
+        # 🔥 MO 전용: 15회마다 context 자체를 재생성하여 서버 측 세션 추적 완전 우회
+        if env == "MO" and total_attempts > 0 and total_attempts % 15 == 0:
+            try:
+                current_url = page.url
+                await page.close()
+                context_recreate_count += 1
+                new_ctx = await browser.new_context(**context_opts)
+                context = new_ctx
+                page = await context.new_page()
+                page.on("dialog", lambda dialog: asyncio.create_task(dialog.accept()))
+                await page.route("**/*", block_resources)
+                await page.goto(current_url, wait_until="load", timeout=15000)
+                print(f"🔄🔄 {prefix} [컨텍스트 재생성 #{context_recreate_count}] 완전 새 세션으로 교체! ({total_attempts}회차)")
+            except Exception as e:
+                print(f"⚠️ {prefix} 컨텍스트 재생성 실패: {e}")
+
         total_attempts += 1
-        found_dc_ad_in_this_round = False 
-        
+        found_dc_ad_in_this_round = False
+
         try:
-            await page.evaluate("window.scrollTo(0, 0);") 
+            await page.evaluate("window.scrollTo(0, 0);")
             await page.reload(wait_until="load", timeout=12000)
-            
-            # 🔥 이슈 A 해결: MO 본문일 때만 5단계 정밀 스크롤, 나머지는 3단계 쾌속 스크롤
+
+            # 🔥 MO 본문: 7단계 초정밀 스크롤 (15% → 30% → 45% → 60% → 75% → 90% → 100%)
             if page_type == "본문" and env == "MO":
-                await asyncio.sleep(1.0)
-                await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.2);")
-                await asyncio.sleep(0.4)
-                await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.4);")
-                await asyncio.sleep(0.4)
-                await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.6);")
-                await asyncio.sleep(0.4)
-                await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.8);")
-                await asyncio.sleep(0.4)
-                await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+                await asyncio.sleep(1.2)
+                for pct in [0.15, 0.30, 0.45, 0.60, 0.75, 0.90, 1.0]:
+                    await page.evaluate(f"window.scrollTo(0, document.body.scrollHeight * {pct});")
+                    await asyncio.sleep(0.6)
+                # iframe 로드 대기: 모든 프레임이 로드될 때까지 기다림
+                for frame in page.frames:
+                    try:
+                        await frame.wait_for_load_state("domcontentloaded", timeout=3000)
+                    except: pass
                 await asyncio.sleep(0.8)
+            elif page_type == "본문" and env == "PC":
+                # PC 본문도 5단계 정밀 스크롤로 강화
+                await asyncio.sleep(1.0)
+                for pct in [0.2, 0.4, 0.6, 0.8, 1.0]:
+                    await page.evaluate(f"window.scrollTo(0, document.body.scrollHeight * {pct});")
+                    await asyncio.sleep(0.4)
+                await asyncio.sleep(0.6)
             else:
+                # 리스트 페이지: 3단계 쾌속 스크롤
                 await asyncio.sleep(1.5)
                 await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 3);")
                 await asyncio.sleep(0.5)
@@ -198,7 +242,7 @@ async def capture_ads(context, page, env, gallery, page_type):
         for frame in page.frames:
             try:
                 for ad in await frame.locator("a").all():
-                    
+
                     raw_href_attr = await ad.get_attribute("href") or ""
                     clean_href_attr = raw_href_attr.strip().lower()
 
@@ -207,6 +251,7 @@ async def capture_ads(context, page, env, gallery, page_type):
                     if "/board/lists" in clean_href_attr or "/mini/board/lists" in clean_href_attr: continue
                     if "dcad" in clean_href_attr: continue
 
+                    # JavaScript 동적 href 추출 (onclick 등)
                     raw_href = await ad.evaluate("""n => {
                         if (n.href && !n.href.includes('__CLICK__') && !n.href.includes('__click__') && !n.href.includes('null')) return n.href;
                         let oc = n.getAttribute('onclick');
@@ -217,9 +262,10 @@ async def capture_ads(context, page, env, gallery, page_type):
                         return n.href || '';
                     }""")
                     clean_href = raw_href.strip().lower()
-                    
+
                     if clean_href.endswith("#") or "/board/lists" in clean_href or "dcad" in clean_href: continue
-                    
+
+                    # 이미지 추출 (data-src, data-original, background-image 포함)
                     img_src = await ad.evaluate("""n => {
                         let getValidSrc = (el) => {
                             let w = el.getAttribute('width');
@@ -251,11 +297,11 @@ async def capture_ads(context, page, env, gallery, page_type):
                         }
                         return '';
                     }""")
-                    
+
                     raw_pos = await ad.evaluate("n => { let p = n.closest('div'); return p ? p.className : ''; }")
                     txt = await ad.inner_text() or ""
-                    
-                    clean_img = img_src.strip() 
+
+                    clean_img = img_src.strip()
                     clean_txt = re.sub(r'<[^>]+>', '', txt).strip()
 
                     bad_img_urls = ["board/lists", "gall.dcinside.com", "m.dcinside.com"]
@@ -268,77 +314,85 @@ async def capture_ads(context, page, env, gallery, page_type):
                         clean_txt = ""
                     if not clean_img and not clean_txt: continue
 
+                    # 외부 네트워크 광고 필터링
                     external_ad_networks = ["google", "adsrvr", "criteo", "taboola", "doubleclick", "adnxs", "smartadserver", "naver.com", "ader.naver.com", "nclick", "kakao", "daum", "mobon", "exelbid"]
                     if any(k in clean_href for k in external_ad_networks): continue
-                    
+
+                    # 쓰레기 이미지 필터링
                     junk_images = ["close", "x_btn", "traffic_", "default_banner", "noimage", "icon", "btn_ad_close"]
                     if clean_img and any(j in clean_img.lower() for j in junk_images): continue
 
+                    # 디시 직판 광고 판별
                     is_real_ad = False
                     if any(x in clean_href for x in ["addc.dc", "netinsight", "toast", "utm_source"]):
                         is_real_ad = True
-                        
-                    if not is_real_ad: 
+
+                    if not is_real_ad:
                         continue
-                        
+
                     found_dc_ad_in_this_round = True
 
+                    # 최종 랜딩 URL 추적
                     final_url = ""
                     if not raw_href.startswith("javascript") and raw_href != "#" and "__click__" not in raw_href.lower():
                         final_url = await get_final_landing_url(context, raw_href, base_page_url)
                     else:
                         final_url = raw_href
-                        
+
                     clean_final = final_url.strip()
-                    
+
                     if clean_final.endswith("#") or "/board/lists" in clean_final or "dcad" in clean_final:
-                        continue 
-                        
+                        continue
+
                     clean_final = clean_final.replace("__CLICK__", "").replace("__click__", "")
                     if not clean_final or clean_final.lower() in ["null", "#", "http://null", "https://null"]:
                         clean_final = "랜딩 URL 없음 (클릭 이벤트)"
                     if "nstatic.dcinside.com" in clean_final:
                         clean_final = "랜딩 URL 없음 (이미지 서버)"
-                    
+
                     has_img = bool(clean_img)
                     pos = get_korean_position(env, page_type, raw_pos, has_img, raw_href, clean_href + " " + clean_final)
-                    
+
                     ad_signature = f"{pos}|{clean_img}|{clean_final}"
-                    
+
                     if ad_signature not in seen:
                         seen.add(ad_signature)
                         text_val = "이미지 배너" if has_img and not clean_txt else clean_txt
-                        print(f"✅ {prefix} [유효 {valid_attempts+1}/40회차] {pos} (새로운 소재 추가)")
+                        print(f"✅ {prefix} [유효 {valid_attempts+1}/{max_valid}회차] {pos} (새로운 소재 추가)")
                         collected.append({"date": today, "gallery": gallery, "env": env, "pos": pos, "url": clean_final, "img": clean_img, "text": text_val})
             except: continue
-            
+
         if found_dc_ad_in_this_round:
             valid_attempts += 1
-            print(f"✅ {prefix} [유효 {valid_attempts}/40회차] (직판 광고 확인 완료)")
+            if valid_attempts % 10 == 0:
+                print(f"📊 {prefix} [진행률] 유효 {valid_attempts}/{max_valid}회 완료 (누적 시도: {total_attempts}, 수집 소재: {len(collected)}개)")
         else:
-            print(f"⚠️ {prefix} [전체 구글광고 덮임] 카운트 미차감 (현재 유효: {valid_attempts}/40, 누적 시도: {total_attempts})")
-            
-    return collected
+            print(f"⚠️ {prefix} [전체 구글광고 덮임] 카운트 미차감 (현재 유효: {valid_attempts}/{max_valid}, 누적 시도: {total_attempts})")
 
-async def task_runner(sem, ctx, env, tgt, queue):
+    print(f"🏁 {prefix} 수집 종료! 유효 {valid_attempts}/{max_valid}회, 총 시도 {total_attempts}회, 수집 소재 {len(collected)}개")
+    return collected, context, page
+
+# --- ⚡ 단일 갤러리+환경 작업 실행기 ---
+async def task_runner(sem, ctx, env, tgt, queue, browser, context_opts):
     async with sem:
         await asyncio.sleep(random.uniform(0, 1.5))
         page = await ctx.new_page()
         page.on("dialog", lambda dialog: asyncio.create_task(dialog.accept()))
         await page.route("**/*", block_resources)
         try:
-            target_url = tgt['pc'] if env=="PC" else tgt['mo']
+            target_url = tgt['pc'] if env == "PC" else tgt['mo']
             gallery_id = ""
             if "id=" in target_url: gallery_id = target_url.split("id=")[-1].split("&")[0]
             else: gallery_id = target_url.split("/")[-1]
 
             await page.goto(target_url, wait_until="load", timeout=15000)
             await asyncio.sleep(1.5)
-            
+
+            # 갤러리 접속 확인 (바운스 방어)
             page_title = await page.title()
             current_url = page.url.lower()
             keyword = tgt['name'].replace("갤러리", "").replace(" ", "").strip()
-            
+
             bounce_urls = ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini"]
             if keyword not in page_title.replace(" ", "") or current_url in bounce_urls:
                 if env == "PC":
@@ -354,54 +408,102 @@ async def task_runner(sem, ctx, env, tgt, queue):
                         await asyncio.sleep(1)
                         if keyword in (await page.title()).replace(" ", ""): break
 
-            for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
-            
-            # 🔥 이슈 A 해결 (본문 진입 삑사리 원천 봉쇄): 클릭 대신 진짜 href를 뽑아내서 주소창에 다이렉트로 꽂아버립니다.
-            post_locator = page.locator("tr.us-post:not(.notice) td.gall_tit > a:not(.reply_numbox)").first if env=="PC" else page.locator("ul.gall-detail-lst li:not(.notice) .gall-detail-lnktit a").first
-            
-            if await post_locator.count() > 0:
-                post_href = await post_locator.get_attribute("href")
-                if post_href:
-                    if not post_href.startswith("http"):
-                        base_domain = "https://gall.dcinside.com" if env == "PC" else "https://m.dcinside.com"
-                        post_href = base_domain + post_href
-                        
-                    await page.goto(post_href, wait_until="load", timeout=15000)
-                    await asyncio.sleep(2.5)
-                    for item in await capture_ads(ctx, page, env, tgt['name'], "본문"): await queue.put(item)
-        except: pass
-        finally: await page.close()
+            print(f"🌐 [{env}] {tgt['name']} 접속 완료. 리스트 수집 시작!")
 
+            # 📋 리스트 페이지 광고 수집
+            list_results, ctx, page = await capture_ads(ctx, page, env, tgt['name'], "리스트", browser, context_opts)
+            for item in list_results: await queue.put(item)
+
+            # 📝 본문 페이지 광고 수집 (MO: 3개 게시글 순회, PC: 1개)
+            if env == "MO":
+                # 🔥 MO 멀티 게시글 샘플링: 최대 3개 게시글에서 각각 수집
+                post_locator = page.locator("ul.gall-detail-lst li:not(.notice) .gall-detail-lnktit a")
+                post_count = await post_locator.count()
+                num_posts = min(3, post_count)
+                post_hrefs = []
+
+                for idx in range(num_posts):
+                    try:
+                        href = await post_locator.nth(idx).get_attribute("href")
+                        if href:
+                            if not href.startswith("http"):
+                                href = "https://m.dcinside.com" + href
+                            post_hrefs.append(href)
+                    except: continue
+
+                print(f"📱 [MO] {tgt['name']} 본문 {len(post_hrefs)}개 게시글 순회 시작!")
+                for p_idx, post_href in enumerate(post_hrefs):
+                    try:
+                        await page.goto(post_href, wait_until="load", timeout=15000)
+                        await asyncio.sleep(2.5)
+                        print(f"📱 [MO] {tgt['name']} 본문 #{p_idx+1}/{len(post_hrefs)} 진입 완료")
+                        body_results, ctx, page = await capture_ads(ctx, page, env, tgt['name'], "본문", browser, context_opts)
+                        for item in body_results: await queue.put(item)
+
+                        # 다음 게시글 방문 전 리스트로 복귀
+                        if p_idx < len(post_hrefs) - 1:
+                            list_url = tgt['mo']
+                            await page.goto(list_url, wait_until="load", timeout=15000)
+                            await asyncio.sleep(1.5)
+                            # 새 리스트 페이지에서 post_locator 갱신
+                            post_locator = page.locator("ul.gall-detail-lst li:not(.notice) .gall-detail-lnktit a")
+                    except Exception as e:
+                        print(f"⚠️ [MO] {tgt['name']} 본문 #{p_idx+1} 에러: {e}")
+                        continue
+            else:
+                # PC: 기존대로 1개 게시글 진입
+                post_locator = page.locator("tr.us-post:not(.notice) td.gall_tit > a:not(.reply_numbox)").first
+                if await post_locator.count() > 0:
+                    post_href = await post_locator.get_attribute("href")
+                    if post_href:
+                        if not post_href.startswith("http"):
+                            post_href = "https://gall.dcinside.com" + post_href
+                        await page.goto(post_href, wait_until="load", timeout=15000)
+                        await asyncio.sleep(2.5)
+                        body_results, ctx, page = await capture_ads(ctx, page, env, tgt['name'], "본문", browser, context_opts)
+                        for item in body_results: await queue.put(item)
+        except Exception as e:
+            print(f"⚠️ [{env}] {tgt['name']} 전체 에러: {e}")
+        finally:
+            try: await page.close()
+            except: pass
+
+# --- 🚀 메인 실행 ---
 async def main():
     if not TARGET_GALLERIES: return
+    print(f"🚀 [서버 {CHUNK_INDEX+1}/{TOTAL_CHUNKS}] 갤러리 {len(TARGET_GALLERIES)}개 담당 시작!")
+
     gc = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
     ws = gc.open_by_url(SHEET_URL).get_worksheet(0)
-    
+
     async with async_playwright() as p:
+        # PC 컨텍스트: 일반 Windows Chrome 위장
         pc_context_opts = {
             "viewport": {"width": 1920, "height": 1080},
             "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         }
+        # 🔥 MO 컨텍스트: 갤럭시 Android Mobile Chrome 완벽 위장
         mo_context_opts = {
             "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-G991N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
             "viewport": {"width": 390, "height": 844},
             "is_mobile": True,
             "has_touch": True
         }
-        
+
         browser = await p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-web-security"])
         pc_ctx = await browser.new_context(**pc_context_opts)
         mo_ctx = await browser.new_context(**mo_context_opts)
-        
+
         sem, queue = asyncio.Semaphore(5), asyncio.Queue()
         uploader = asyncio.create_task(uploader_worker(queue, ws))
 
-        tasks = [task_runner(sem, pc_ctx, "PC", t, queue) for t in TARGET_GALLERIES] + [task_runner(sem, mo_ctx, "MO", t, queue) for t in TARGET_GALLERIES]
+        tasks = [task_runner(sem, pc_ctx, "PC", t, queue, browser, pc_context_opts) for t in TARGET_GALLERIES] + \
+                [task_runner(sem, mo_ctx, "MO", t, queue, browser, mo_context_opts) for t in TARGET_GALLERIES]
         await asyncio.gather(*tasks)
         await browser.close()
-        
+
         await queue.put(None)
         await uploader
-        print(f"🎉 수집 종료!")
+        print(f"🎉 [서버 {CHUNK_INDEX+1}] 수집 종료!")
 
 if __name__ == "__main__": asyncio.run(main())
