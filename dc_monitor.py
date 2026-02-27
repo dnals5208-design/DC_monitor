@@ -156,24 +156,41 @@ async def capture_ads(context, page, env, gallery, page_type):
     total_attempts = 0  
     
     while valid_attempts < 40 and total_attempts < 80:
+        # 🔥 이슈 B 해결: 10번 돌 때마다 한 번씩 쿠키(기억)를 초기화하여 롤링 소재 강제 교체 유도
+        if total_attempts > 0 and total_attempts % 10 == 0:
+            try:
+                await context.clear_cookies()
+                print(f"🔄 {prefix} [세션 갱신] 롤링 배너 누락 방지를 위해 쿠키를 초기화했습니다.")
+            except: pass
+
         total_attempts += 1
         found_dc_ad_in_this_round = False 
         
         try:
-            # 🔥 핵심 복구 1: 스크롤을 맨 위로 강제 리셋하여 짤방배너 게으른 로딩을 무조건 깨웁니다.
             await page.evaluate("window.scrollTo(0, 0);") 
             await page.reload(wait_until="load", timeout=12000)
-            await asyncio.sleep(1.5)
             
-            # 🔥 핵심 복구 2: 짤방배너 탐색을 위한 꼼꼼한 4단계 스크롤
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 4);")
-            await asyncio.sleep(0.4)
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2);")
-            await asyncio.sleep(0.4)
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 1.2);")
-            await asyncio.sleep(0.4)
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-            await asyncio.sleep(0.8)
+            # 🔥 이슈 A 해결: MO 본문일 때만 5단계 정밀 스크롤, 나머지는 3단계 쾌속 스크롤
+            if page_type == "본문" and env == "MO":
+                await asyncio.sleep(1.0)
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.2);")
+                await asyncio.sleep(0.4)
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.4);")
+                await asyncio.sleep(0.4)
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.6);")
+                await asyncio.sleep(0.4)
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.8);")
+                await asyncio.sleep(0.4)
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+                await asyncio.sleep(0.8)
+            else:
+                await asyncio.sleep(1.5)
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 3);")
+                await asyncio.sleep(0.5)
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 1.5);")
+                await asyncio.sleep(0.5)
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+                await asyncio.sleep(1.0)
         except: pass
 
         base_page_url = page.url.split('#')[0].split('?')[0].lower()
@@ -339,13 +356,19 @@ async def task_runner(sem, ctx, env, tgt, queue):
 
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
             
-            # 🔥 핵심 복구 3: 모바일(MO) 환경에서 본문 클릭 시 실수로 지웠던 .gall-detail-lnktit 클래스를 다시 추가하여 정확히 진입하게 했습니다.
-            post = page.locator("tr.us-post:not(.notice) td.gall_tit > a:not(.reply_numbox)").first if env=="PC" else page.locator("ul.gall-detail-lst li:not(.notice) .gall-detail-lnktit a").first
+            # 🔥 이슈 A 해결 (본문 진입 삑사리 원천 봉쇄): 클릭 대신 진짜 href를 뽑아내서 주소창에 다이렉트로 꽂아버립니다.
+            post_locator = page.locator("tr.us-post:not(.notice) td.gall_tit > a:not(.reply_numbox)").first if env=="PC" else page.locator("ul.gall-detail-lst li:not(.notice) .gall-detail-lnktit a").first
             
-            if await post.count() > 0:
-                await post.click()
-                await asyncio.sleep(2.5)
-                for item in await capture_ads(ctx, page, env, tgt['name'], "본문"): await queue.put(item)
+            if await post_locator.count() > 0:
+                post_href = await post_locator.get_attribute("href")
+                if post_href:
+                    if not post_href.startswith("http"):
+                        base_domain = "https://gall.dcinside.com" if env == "PC" else "https://m.dcinside.com"
+                        post_href = base_domain + post_href
+                        
+                    await page.goto(post_href, wait_until="load", timeout=15000)
+                    await asyncio.sleep(2.5)
+                    for item in await capture_ads(ctx, page, env, tgt['name'], "본문"): await queue.put(item)
         except: pass
         finally: await page.close()
 
