@@ -405,10 +405,10 @@ async def task_runner(sem, ctx, env, tgt, queue):
                         base_domain = "https://gall.dcinside.com" if env == "PC" else "https://m.dcinside.com"
                         post_href = base_domain + post_href
 
-                    # 🔥 MO 핵심 수정: PC URL이 들어왔으면 모바일 URL로 강제 변환
-                    # PC: gall.dcinside.com/board/view/?id=toeic&no=12345
-                    # MO: m.dcinside.com/board/toeic/12345
-                    if env == "MO" and "gall.dcinside.com" in post_href:
+                    # 🔥 MO 핵심 수정: 잘못된 URL (PC형식 등)이 들어왔으면 모바일 URL로 강제 변환
+                    # PC 또는 비정상 MO: m.dcinside.com/board/view/?id=toeic&no=12345
+                    # 정상 MO: m.dcinside.com/board/toeic/12345
+                    if env == "MO" and ("gall.dcinside.com" in post_href or "board/view" in post_href):
                         try:
                             from urllib.parse import urlparse, parse_qs
                             parsed = urlparse(post_href)
@@ -417,11 +417,11 @@ async def task_runner(sem, ctx, env, tgt, queue):
                             g_no = qs.get("no", [""])[0]
                             if g_no:
                                 post_href = f"https://m.dcinside.com/board/{g_id}/{g_no}"
-                                print(f"🔄 [MO] PC URL → 모바일 URL 변환: {post_href}")
+                                print(f"🔄 [MO] 잘못된 URL → 모바일 URL 변환: {post_href}")
                             else:
                                 post_href = f"https://m.dcinside.com/board/{g_id}"
                         except:
-                            post_href = post_href.replace("gall.dcinside.com", "m.dcinside.com")
+                            post_href = post_href.replace("gall.dcinside.com", "m.dcinside.com").replace("/board/view/?id=", "/board/")
 
                     await page.goto(post_href, wait_until="load", timeout=15000)
                     await asyncio.sleep(2.5)
