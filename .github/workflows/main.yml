@@ -46,5 +46,5 @@ jobs:
     - name: 수집 로봇 동시 가동 (서버 번호 ${{ matrix.chunk }})
       env:
         CHUNK_INDEX: ${{ matrix.chunk }}
-        TOTAL_CHUNKS: 10 # 🔥 파이썬에게 전체가 10대라고 알려줍니다.
+        TOTAL_CHUNKS: 12 # 🔥 파이썬에게 전체가 10대라고 알려줍니다.
       run: python -u dc_monitor.py
