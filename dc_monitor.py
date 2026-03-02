@@ -227,7 +227,7 @@ async def capture_ads(context, page, env, gallery, page_type):
     today = datetime.now(KST).strftime("%Y-%m-%d")
     prefix = f"[{env}|{gallery[:4]}|{page_type}]"
 
-    max_valid = 50 if env == "MO" else 40
+    max_valid = 50 if env == "MO" else 50
     max_total = max_valid * 2
 
     valid_attempts = 0
