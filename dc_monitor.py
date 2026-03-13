@@ -87,7 +87,6 @@ def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
     target_url = raw_href.split('?')[0].lower()
     pos_result = ""
 
-    # 1차: 디시 광고 URL 구조에서 위치 파싱 (가장 정확)
     if "click/dcinside" in target_url:
         try:
             parts = target_url.split('/')
@@ -116,7 +115,6 @@ def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
         except:
             pass
 
-    # 2차: DOM 클래스명 + href 텍스트 기반 fallback
     if not pos_result:
         raw = (str(raw_pos) + " " + str(urls_text)).lower()
         if not is_image:
@@ -141,7 +139,6 @@ def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
             else:
                 pos_result = f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 상단배너"
 
-    # 🔥 영역명 강제 정상화: 리스트에서 수집했는데 '본문'이 섞여 나오면 '리스트 공지'로 교정
     if page_type == "리스트" and "본문" in pos_result:
         return "리스트 공지"
 
@@ -189,8 +186,6 @@ async def block_resources(route):
 
 
 # --- ✅ MO 본문 짤방 iframe 로딩 완료 대기 ---
-# 고정 sleep 대신 실제 광고 iframe이 DOM에 나타날 때까지 폴링
-# → 짤방 배너가 늦게 inject되는 경우도 안정적으로 포착
 async def _wait_for_ad_frames(page, timeout_ms=7000):
     deadline = asyncio.get_event_loop().time() + timeout_ms / 1000
     ad_keywords = ["addc.dc", "netinsight", "toast"]
@@ -202,23 +197,15 @@ async def _wait_for_ad_frames(page, timeout_ms=7000):
                     .filter(s => s.length > 0);
             }""")
             if any(kw in src for src in frame_srcs for kw in ad_keywords):
-                # iframe src 확인 후 내부 렌더링 여유 시간
                 await asyncio.sleep(0.8)
                 return
         except:
             pass
         await asyncio.sleep(0.3)
-    # 타임아웃 시에도 그냥 진행 (수집 시도는 함)
     await asyncio.sleep(1.0)
 
 
 # --- 🔍 광고 탐색 핵심 엔진 ---
-# ✅ 핵심 변경사항:
-#   1. 세션 초기화(쿠키+스토리지 클리어) 완전 제거
-#      → 초기화하면 광고 서버가 "새 유저"로 인식해 같은 소재를 처음부터 반복 서빙
-#      → 초기화 없이 누적 노출 횟수가 쌓여야 광고 서버가 롤링 소재를 서빙함
-#   2. MO 본문: 고정 sleep(2.0) → _wait_for_ad_frames() 폴링 대기로 교체
-#      → 짤방 iframe이 늦게 로딩되는 경우도 안정적으로 포착
 async def capture_ads(context, page, env, gallery, page_type):
     collected = []
     seen = set()
@@ -227,7 +214,7 @@ async def capture_ads(context, page, env, gallery, page_type):
     today = datetime.now(KST).strftime("%Y-%m-%d")
     prefix = f"[{env}|{gallery[:4]}|{page_type}]"
 
-    max_valid = 50 if env == "MO" else 50
+    max_valid = 50 
     max_total = max_valid * 2
 
     valid_attempts = 0
@@ -235,10 +222,10 @@ async def capture_ads(context, page, env, gallery, page_type):
 
     while valid_attempts < max_valid and total_attempts < max_total:
 
-        # ✅ 세션 초기화 블록 완전 제거
-        # (이전: 10회마다 context.clear_cookies() + localStorage/sessionStorage 초기화)
-        # 제거 이유: 광고 서버 프리퀀시 카운터가 리셋되어 같은 소재가 반복 서빙됨
-        # 세션을 유지해야 광고 서버가 노출 횟수를 누적 인식 → 롤링 소재 다양하게 서빙
+        # 🔥 비상 탈출 로직: 15번 연속으로 진짜 광고를 단 한 개도 못 찾으면, 광고 없는 공지글/에러 페이지로 간주하고 즉시 탈출!
+        if total_attempts == 15 and len(collected) == 0:
+            print(f"🚨 {prefix} [비상 탈출] 15회 시도 동안 유효 광고 0개! (현재 URL: {page.url[:60]}...) -> 유령 페이지로 판단하여 스킵합니다.")
+            break
 
         total_attempts += 1
         found_dc_ad_in_this_round = False
@@ -249,21 +236,17 @@ async def capture_ads(context, page, env, gallery, page_type):
 
             if page_type == "본문":
                 if env == "MO":
-                    # ✅ MO 짤방: 고정 sleep 대신 iframe 로딩 완료까지 폴링 대기
                     await _wait_for_ad_frames(page, timeout_ms=7000)
                 else:
-                    # PC 본문: 기존 방식 유지 (PC는 짤방 iframe 타이밍 문제 없음)
                     await asyncio.sleep(2.0)
 
                 await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.5);")
                 await asyncio.sleep(0.5)
                 await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
                 await asyncio.sleep(0.5)
-                # 상단 복귀 (짤방 배너 DOM 접근 안정화)
                 await page.evaluate("window.scrollTo(0, 0);")
                 await asyncio.sleep(0.3)
             else:
-                # 리스트 페이지: 3단계 쾌속 스크롤
                 await asyncio.sleep(1.5)
                 await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 3);")
                 await asyncio.sleep(0.5)
@@ -292,7 +275,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                     if "dcad" in clean_href_attr:
                         continue
 
-                    # JavaScript 동적 href 추출 (onclick 등)
                     raw_href = await ad.evaluate("""n => {
                         if (n.href && !n.href.includes('__CLICK__') && !n.href.includes('__click__') && !n.href.includes('null')) return n.href;
                         let oc = n.getAttribute('onclick');
@@ -307,7 +289,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                     if clean_href.endswith("#") or "/board/lists" in clean_href or "dcad" in clean_href:
                         continue
 
-                    # 이미지 추출 (data-src, data-original, background-image 포함)
                     img_src = await ad.evaluate("""n => {
                         let getValidSrc = (el) => {
                             let w = el.getAttribute('width');
@@ -365,12 +346,10 @@ async def capture_ads(context, page, env, gallery, page_type):
                     if any(k in clean_href for k in external_ad_networks):
                         continue
 
-                    # 쓰레기 이미지 필터링
                     junk_images = ["close", "x_btn", "traffic_", "default_banner", "noimage", "icon", "btn_ad_close"]
                     if clean_img and any(j in clean_img.lower() for j in junk_images):
                         continue
 
-                    # 디시 직판 광고 판별
                     is_real_ad = False
                     if any(x in clean_href for x in ["addc.dc", "netinsight", "toast", "utm_source"]):
                         is_real_ad = True
@@ -380,7 +359,6 @@ async def capture_ads(context, page, env, gallery, page_type):
 
                     found_dc_ad_in_this_round = True
 
-                    # 최종 랜딩 URL 추적
                     if not raw_href.startswith("javascript") and raw_href != "#" and "__click__" not in raw_href.lower():
                         final_url = await get_final_landing_url(context, raw_href, base_page_url)
                     else:
@@ -450,7 +428,6 @@ async def task_runner(sem, ctx, env, tgt, queue):
             await page.goto(target_url, wait_until="load", timeout=15000)
             await asyncio.sleep(1.5)
 
-            # 갤러리 접속 확인 (바운스 방어)
             page_title = await page.title()
             current_url = page.url.lower()
             keyword = tgt['name'].replace("갤러리", "").replace(" ", "").strip()
@@ -487,17 +464,17 @@ async def task_runner(sem, ctx, env, tgt, queue):
 
             print(f"🌐 [{env}] {tgt['name']} 접속 완료. 리스트 수집 시작!")
 
-            # 📋 리스트 페이지 광고 수집
             list_results = await capture_ads(ctx, page, env, tgt['name'], "리스트")
             for item in list_results:
                 await queue.put(item)
 
-            # 📝 본문 페이지 광고 수집 (href 직접 추출 → 다이렉트 진입)
+            # 🔥 공지글 회피 로직 적용 (MO/PC 공통)
             if env == "PC":
+                # 기존 PC 코드 (공지 제외) 유지
                 post_locator = page.locator("tr.us-post:not(.notice) td.gall_tit > a:not(.reply_numbox)").first
             else:
-                # MO 게시글 링크: ul.gall-detail-lst 내부 a.lt
-                post_locator = page.locator("ul.gall-detail-lst a.lt").first
+                # 🔥 [핵심 수정] MO 환경에서 class에 'notice'나 'sp-lst'가 없는 일반 유저의 진짜 글 링크(a.lt)만 정확히 타겟팅
+                post_locator = page.locator("ul.gall-detail-lst li:not([class*='notice']):not([class*='sp-lst']) a.lt").first
 
             if await post_locator.count() > 0:
                 post_href = await post_locator.get_attribute("href")
@@ -506,7 +483,6 @@ async def task_runner(sem, ctx, env, tgt, queue):
                         base_domain = "https://gall.dcinside.com" if env == "PC" else "https://m.dcinside.com"
                         post_href = base_domain + post_href
 
-                    # MO URL 강제 변환 (PC형식 URL이 들어온 경우)
                     if env == "MO" and ("gall.dcinside.com" in post_href or "board/view" in post_href):
                         try:
                             from urllib.parse import urlparse, parse_qs
@@ -516,7 +492,6 @@ async def task_runner(sem, ctx, env, tgt, queue):
                             g_no = qs.get("no", [""])[0]
                             if g_no:
                                 post_href = f"https://m.dcinside.com/board/{g_id}/{g_no}"
-                                print(f"🔄 [MO] URL 변환: {post_href}")
                             else:
                                 post_href = f"https://m.dcinside.com/board/{g_id}"
                         except:
@@ -548,12 +523,10 @@ async def main():
     ws = gc.open_by_url(SHEET_URL).get_worksheet(0)
 
     async with async_playwright() as p:
-        # PC 컨텍스트: Windows Chrome 위장
         pc_context_opts = {
             "viewport": {"width": 1920, "height": 1080},
             "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         }
-        # MO 컨텍스트: 갤럭시 Android Mobile Chrome 위장
         mo_context_opts = {
             "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-G991N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
             "viewport": {"width": 390, "height": 844},
