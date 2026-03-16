@@ -159,23 +159,6 @@ async def block_resources(route):
     else: await route.continue_()
 
 
-# --- ✅ MO 본문 짤방 iframe 로딩 완료 대기 ---
-async def _wait_for_ad_frames(page, timeout_ms=7000):
-    deadline = asyncio.get_event_loop().time() + timeout_ms / 1000
-    ad_keywords = ["addc.dc", "netinsight", "toast"]
-    while asyncio.get_event_loop().time() < deadline:
-        try:
-            frame_srcs = await page.evaluate("""() => {
-                return Array.from(document.querySelectorAll('iframe')).map(f => f.src || f.getAttribute('data-src') || '').filter(s => s.length > 0);
-            }""")
-            if any(kw in src for src in frame_srcs for kw in ad_keywords):
-                await asyncio.sleep(0.8)
-                return
-        except: pass
-        await asyncio.sleep(0.3)
-    await asyncio.sleep(1.0)
-
-
 # --- 🔍 광고 탐색 핵심 엔진 ---
 async def capture_ads(context, page, env, gallery, page_type):
     collected = []
@@ -185,7 +168,6 @@ async def capture_ads(context, page, env, gallery, page_type):
     today = datetime.now(KST).strftime("%Y-%m-%d")
     prefix = f"[{env}|{gallery[:4]}|{page_type}]"
 
-    # 🔥 사용자 요청에 맞게 40회로 정확히 제한!
     max_valid = 40 
     max_total = 80
 
@@ -212,19 +194,31 @@ async def capture_ads(context, page, env, gallery, page_type):
             await page.evaluate("window.scrollTo(0, 0);")
             await page.reload(wait_until="load", timeout=12000)
 
+            # 🔥 MO/PC 스크롤 최적화 로직 (Lazy Loading 완벽 대응)
             if page_type == "본문":
                 if env == "MO":
-                    await _wait_for_ad_frames(page, timeout_ms=7000)
+                    # MO는 본문 중간(50%)에 짤방 배너가 뜹니다. 중간에서 확실하게 기다려줍니다!
+                    await asyncio.sleep(1.0)
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.25);")
+                    await asyncio.sleep(0.5)
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.50);")
+                    await asyncio.sleep(3.0) # ⏳ 핵심 대기 포인트: 여기서 짤방이 로딩될 시간을 충분히 줍니다.
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.75);")
+                    await asyncio.sleep(0.5)
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+                    await asyncio.sleep(0.5)
                 else:
+                    # PC 본문
                     await asyncio.sleep(2.0)
-
-                await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.5);")
-                await asyncio.sleep(0.5)
-                await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-                await asyncio.sleep(0.5)
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.5);")
+                    await asyncio.sleep(0.5)
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+                    await asyncio.sleep(0.5)
+                    
                 await page.evaluate("window.scrollTo(0, 0);")
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.5)
             else:
+                # 리스트 페이지
                 await asyncio.sleep(1.5)
                 await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 3);")
                 await asyncio.sleep(0.5)
@@ -295,6 +289,7 @@ async def capture_ads(context, page, env, gallery, page_type):
                     junk_images = ["close", "x_btn", "traffic_", "default_banner", "noimage", "icon", "btn_ad_close"]
                     if clean_img and any(j in clean_img.lower() for j in junk_images): continue
 
+                    # 디시 직판 광고/제휴 광고 판단 기준 (utm_source가 있다면 거의 100% 직판 광고)
                     is_real_ad = any(x in clean_href for x in ["addc.dc", "netinsight", "toast", "utm_source"])
                     if not is_real_ad: continue
 
@@ -365,14 +360,14 @@ async def task_runner(sem, ctx, env, tgt, queue):
 
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
 
-            # 🔥 스마트 게시글 판독기: '설문', '공지'가 아닌 "진짜 숫자로 된 일반 게시글"만 찾아 들어갑니다.
+            # 🔥 스마트 게시글 판독기: '설문', '공지'가 아닌 "진짜 일반 게시글"만 찾아 들어갑니다.
             post_href = None
             if env == "PC":
                 rows = await page.locator("tr.us-post").all()
                 for row in rows:
                     try:
                         num_text = await row.locator("td.gall_num").inner_text()
-                        if num_text.strip().isdigit(): # 글 번호가 숫자인 것만 취급 (설문, 공지 회피)
+                        if num_text.strip().isdigit():
                             a_tag = row.locator("td.gall_tit > a:not(.reply_numbox)").first
                             post_href = await a_tag.get_attribute("href")
                             if post_href: break
@@ -384,7 +379,7 @@ async def task_runner(sem, ctx, env, tgt, queue):
                         class_name = await row.get_attribute("class") or ""
                         if "notice" in class_name or "sp-lst" in class_name: continue
                         title_text = await row.inner_text()
-                        if "설문" not in title_text and "공지" not in title_text: # 텍스트로도 설문/공지 회피
+                        if "설문" not in title_text and "공지" not in title_text:
                             a_tag = row.locator("a.lt").first
                             post_href = await a_tag.get_attribute("href")
                             if post_href: break
