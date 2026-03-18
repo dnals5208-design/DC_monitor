@@ -322,6 +322,7 @@ async def capture_ads(context, page, env, gallery, page_type):
         else:
             print(f"⚠️ {prefix} [전체 구글광고 덮임] 카운트 미차감 (현재 유효: {valid_attempts}/{max_valid}, 누적 시도: {total_attempts})")
 
+    # 결과가 0개여도 수집 종료 메시지는 찍어줍니다 (이후 루프에서 환승 시도)
     print(f"🏁 {prefix} 수집 종료! 유효 {valid_attempts}/{max_valid}회, 총 시도 {total_attempts}회, 수집 소재 {len(collected)}개")
     return collected
 
@@ -355,8 +356,9 @@ async def task_runner(sem, ctx, env, tgt, queue):
 
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
 
-            # 🔥 15번째(인덱스 14) 게시글 강제 타겟팅 및 '광고' 필터링 로직 탑재!
-            post_href = None
+            # 🔥 [다중 후보 확보 로직] 안전한 게시글을 1개가 아니라 여러 개 담아둡니다.
+            safe_post_hrefs = []
+            
             if env == "PC":
                 rows = await page.locator("tr.us-post").all()
                 for row in rows:
@@ -364,12 +366,12 @@ async def task_runner(sem, ctx, env, tgt, queue):
                         num_text = await row.locator("td.gall_num").inner_text()
                         if num_text.strip().isdigit():
                             a_tag = row.locator("td.gall_tit > a:not(.reply_numbox)").first
-                            post_href = await a_tag.get_attribute("href")
-                            if post_href: break
+                            href = await a_tag.get_attribute("href")
+                            if href: safe_post_hrefs.append(href)
                     except: continue
             else:
                 rows = await page.locator("ul.gall-detail-lst li").all()
-                # 🚨 MO 환경 핵심: 상단 지뢰밭을 피하기 위해 15번째 게시글(인덱스 14)부터 탐색!
+                # 15번째 게시글(인덱스 14)부터 탐색
                 search_rows = rows[14:] if len(rows) > 14 else rows 
                 
                 for row in search_rows:
@@ -378,32 +380,51 @@ async def task_runner(sem, ctx, env, tgt, queue):
                         if "notice" in class_name or "sp-lst" in class_name: continue
                         
                         title_text = await row.inner_text()
-                        # 🔥 '광고', 'AD', '설문', '공지'가 하나라도 포함된 게시글은 무조건 필터링!
                         if not any(bad_word in title_text for bad_word in ["설문", "공지", "AD", "광고"]):
                             a_tag = row.locator("a.lt").first
-                            post_href = await a_tag.get_attribute("href")
-                            if post_href: break
+                            href = await a_tag.get_attribute("href")
+                            if href: safe_post_hrefs.append(href)
                     except: continue
 
-            if post_href:
-                if not post_href.startswith("http"):
-                    post_href = ("https://gall.dcinside.com" if env == "PC" else "https://m.dcinside.com") + post_href
+            # 🔥 [연속 환승 탐색 로직] 찾아둔 안전한 게시글을 최대 3개까지 순회하며 진입합니다.
+            if safe_post_hrefs:
+                found_any_ads = False
+                # 상위 3개의 안전한 게시글만 시도
+                for i, raw_post_href in enumerate(safe_post_hrefs[:3]):
+                    post_href = raw_post_href
+                    
+                    if not post_href.startswith("http"):
+                        post_href = ("https://gall.dcinside.com" if env == "PC" else "https://m.dcinside.com") + post_href
 
-                if env == "MO" and ("gall.dcinside.com" in post_href or "board/view" in post_href):
-                    try:
-                        from urllib.parse import urlparse, parse_qs
-                        parsed = urlparse(post_href)
-                        qs = parse_qs(parsed.query)
-                        g_id, g_no = qs.get("id", [gallery_id])[0], qs.get("no", [""])[0]
-                        post_href = f"https://m.dcinside.com/board/{g_id}/{g_no}" if g_no else f"https://m.dcinside.com/board/{g_id}"
-                    except:
-                        post_href = post_href.replace("gall.dcinside.com", "m.dcinside.com").replace("/board/view/?id=", "/board/")
+                    if env == "MO" and ("gall.dcinside.com" in post_href or "board/view" in post_href):
+                        try:
+                            from urllib.parse import urlparse, parse_qs
+                            parsed = urlparse(post_href)
+                            qs = parse_qs(parsed.query)
+                            g_id, g_no = qs.get("id", [gallery_id])[0], qs.get("no", [""])[0]
+                            post_href = f"https://m.dcinside.com/board/{g_id}/{g_no}" if g_no else f"https://m.dcinside.com/board/{g_id}"
+                        except:
+                            post_href = post_href.replace("gall.dcinside.com", "m.dcinside.com").replace("/board/view/?id=", "/board/")
 
-                await page.goto(post_href, wait_until="load", timeout=15000)
-                await asyncio.sleep(2.5)
-                for item in await capture_ads(ctx, page, env, tgt['name'], "본문"): await queue.put(item)
+                    print(f"🔄 [{env}] {tgt['name']} 본문 진입 시도 ({i+1}번째 후보글): {post_href}")
+                    await page.goto(post_href, wait_until="load", timeout=15000)
+                    await asyncio.sleep(2.5)
+                    
+                    body_results = await capture_ads(ctx, page, env, tgt['name'], "본문")
+                    
+                    # 수집된 게 있다면 성공이므로 큐에 넣고 다른 후보글 시도는 중단(break)
+                    if len(body_results) > 0:
+                        for item in body_results:
+                            await queue.put(item)
+                        found_any_ads = True
+                        break
+                    else:
+                        print(f"⚠️ [{env}] {tgt['name']} 해당 게시글에서 광고를 찾지 못했습니다. 다음 후보 게시글로 이동합니다.")
+                
+                if not found_any_ads:
+                    print(f"❌ [{env}] {tgt['name']} 후보 게시글 3개를 모두 탐색했으나 유효 광고를 찾지 못했습니다.")
             else:
-                print(f"⚠️ [{env}] {tgt['name']} 일반 게시글을 찾지 못했습니다.")
+                print(f"⚠️ [{env}] {tgt['name']} 안전한 일반 게시글 후보를 찾지 못했습니다.")
         except Exception as e: print(f"⚠️ [{env}] {tgt['name']} 전체 에러: {e}")
         finally:
             try: await page.close()
