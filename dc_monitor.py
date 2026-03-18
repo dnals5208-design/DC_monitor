@@ -176,15 +176,14 @@ async def capture_ads(context, page, env, gallery, page_type):
 
     while valid_attempts < max_valid and total_attempts < max_total:
         
-        # 🚨 비상 탈출 로직 (설문/유령 페이지 방어)
+        # 🚨 비상 탈출 로직
         if total_attempts == 15 and len(collected) == 0:
             print(f"🚨 {prefix} [비상 탈출] 15회 시도 동안 유효 광고 0개! (광고 없는 페이지로 간주하여 스킵)")
             break
 
-        # 🔥 세션 초기화 (롤링 소재 강제 순환을 위해 10회마다 쿠키 삭제)
+        # 🔥 세션 초기화 (롤링 순환)
         if total_attempts > 0 and total_attempts % 10 == 0:
-            try:
-                await context.clear_cookies()
+            try: await context.clear_cookies()
             except: pass
 
         total_attempts += 1
@@ -194,7 +193,6 @@ async def capture_ads(context, page, env, gallery, page_type):
             await page.evaluate("window.scrollTo(0, 0);")
             await page.reload(wait_until="load", timeout=12000)
 
-            # 🔥 MO/PC 스크롤 최적화 로직 (Lazy Loading 완벽 대응)
             if page_type == "본문":
                 if env == "MO":
                     await asyncio.sleep(1.0)
@@ -322,7 +320,6 @@ async def capture_ads(context, page, env, gallery, page_type):
         else:
             print(f"⚠️ {prefix} [전체 구글광고 덮임] 카운트 미차감 (현재 유효: {valid_attempts}/{max_valid}, 누적 시도: {total_attempts})")
 
-    # 결과가 0개여도 수집 종료 메시지는 찍어줍니다 (이후 루프에서 환승 시도)
     print(f"🏁 {prefix} 수집 종료! 유효 {valid_attempts}/{max_valid}회, 총 시도 {total_attempts}회, 수집 소재 {len(collected)}개")
     return collected
 
@@ -356,7 +353,7 @@ async def task_runner(sem, ctx, env, tgt, queue):
 
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
 
-            # 🔥 [다중 후보 확보 로직] 안전한 게시글을 1개가 아니라 여러 개 담아둡니다.
+            # 🔥 [다중 후보 확보 로직]
             safe_post_hrefs = []
             
             if env == "PC":
@@ -370,7 +367,7 @@ async def task_runner(sem, ctx, env, tgt, queue):
                             if href: safe_post_hrefs.append(href)
                     except: continue
             else:
-                rows = await page.locator("ul.gall-detail-lst li").all()
+                rows = await page.locator("ul.gall-detail-lst > li").all()
                 # 15번째 게시글(인덱스 14)부터 탐색
                 search_rows = rows[14:] if len(rows) > 14 else rows 
                 
@@ -381,15 +378,17 @@ async def task_runner(sem, ctx, env, tgt, queue):
                         
                         title_text = await row.inner_text()
                         if not any(bad_word in title_text for bad_word in ["설문", "공지", "AD", "광고"]):
-                            a_tag = row.locator("a.lt").first
+                            # 🔥 클래스명(a.lt) 의존성 제거. 무조건 첫 번째 a 태그 추출!
+                            a_tag = row.locator("a").first
                             href = await a_tag.get_attribute("href")
                             if href: safe_post_hrefs.append(href)
                     except: continue
 
-            # 🔥 [연속 환승 탐색 로직] 찾아둔 안전한 게시글을 최대 3개까지 순회하며 진입합니다.
+            print(f"🔍 [{env}] {tgt['name']} 본문 탐색 후보 확보 완료: {len(safe_post_hrefs)}개")
+
+            # 🔥 [연속 환승 탐색 로직] 
             if safe_post_hrefs:
                 found_any_ads = False
-                # 상위 3개의 안전한 게시글만 시도
                 for i, raw_post_href in enumerate(safe_post_hrefs[:3]):
                     post_href = raw_post_href
                     
@@ -412,7 +411,6 @@ async def task_runner(sem, ctx, env, tgt, queue):
                     
                     body_results = await capture_ads(ctx, page, env, tgt['name'], "본문")
                     
-                    # 수집된 게 있다면 성공이므로 큐에 넣고 다른 후보글 시도는 중단(break)
                     if len(body_results) > 0:
                         for item in body_results:
                             await queue.put(item)
