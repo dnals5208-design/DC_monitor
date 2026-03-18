@@ -176,12 +176,10 @@ async def capture_ads(context, page, env, gallery, page_type):
 
     while valid_attempts < max_valid and total_attempts < max_total:
         
-        # 🚨 비상 탈출 로직
         if total_attempts == 15 and len(collected) == 0:
             print(f"🚨 {prefix} [비상 탈출] 15회 시도 동안 유효 광고 0개! (광고 없는 페이지로 간주하여 스킵)")
             break
 
-        # 🔥 세션 초기화 (롤링 순환)
         if total_attempts > 0 and total_attempts % 10 == 0:
             try: await context.clear_cookies()
             except: pass
@@ -353,22 +351,25 @@ async def task_runner(sem, ctx, env, tgt, queue):
 
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
 
-            # 🔥 [다중 후보 확보 로직]
+            # 🔥 [다중 후보 확보 로직] 사용자 인사이트(icon_txt, 순수 숫자) 완벽 반영!
             safe_post_hrefs = []
             
             if env == "PC":
                 rows = await page.locator("tr.us-post").all()
                 for row in rows:
                     try:
+                        # 1. 갤넘버가 순수 숫자인지 확인 (공지글 완벽 차단)
                         num_text = await row.locator("td.gall_num").inner_text()
                         if num_text.strip().isdigit():
-                            a_tag = row.locator("td.gall_tit > a:not(.reply_numbox)").first
-                            href = await a_tag.get_attribute("href")
-                            if href: safe_post_hrefs.append(href)
+                            # 2. 본문 짤방이 뜨는 '텍스트 게시글(icon_txt)'만 타겟팅 (icon_pic 제외)
+                            icon_txt_count = await row.locator("em.icon_txt").count()
+                            if icon_txt_count > 0:
+                                a_tag = row.locator("td.gall_tit > a:not(.reply_numbox)").first
+                                href = await a_tag.get_attribute("href")
+                                if href: safe_post_hrefs.append(href)
                     except: continue
             else:
                 rows = await page.locator("ul.gall-detail-lst > li").all()
-                # 15번째 게시글(인덱스 14)부터 탐색
                 search_rows = rows[14:] if len(rows) > 14 else rows 
                 
                 for row in search_rows:
@@ -378,15 +379,16 @@ async def task_runner(sem, ctx, env, tgt, queue):
                         
                         title_text = await row.inner_text()
                         if not any(bad_word in title_text for bad_word in ["설문", "공지", "AD", "광고"]):
-                            # 🔥 클래스명(a.lt) 의존성 제거. 무조건 첫 번째 a 태그 추출!
-                            a_tag = row.locator("a").first
-                            href = await a_tag.get_attribute("href")
-                            if href: safe_post_hrefs.append(href)
+                            # MO에서도 사진 아이콘(ico-pic)이 있는 게시글은 패스하도록 보수적 접근
+                            pic_icon_count = await row.locator(".ico-pic, .ic-pic").count()
+                            if pic_icon_count == 0:
+                                a_tag = row.locator("a").first
+                                href = await a_tag.get_attribute("href")
+                                if href: safe_post_hrefs.append(href)
                     except: continue
 
-            print(f"🔍 [{env}] {tgt['name']} 본문 탐색 후보 확보 완료: {len(safe_post_hrefs)}개")
+            print(f"🔍 [{env}] {tgt['name']} 본문 탐색 후보(텍스트전용) 확보 완료: {len(safe_post_hrefs)}개")
 
-            # 🔥 [연속 환승 탐색 로직] 
             if safe_post_hrefs:
                 found_any_ads = False
                 for i, raw_post_href in enumerate(safe_post_hrefs[:3]):
@@ -405,7 +407,7 @@ async def task_runner(sem, ctx, env, tgt, queue):
                         except:
                             post_href = post_href.replace("gall.dcinside.com", "m.dcinside.com").replace("/board/view/?id=", "/board/")
 
-                    print(f"🔄 [{env}] {tgt['name']} 본문 진입 시도 ({i+1}번째 후보글): {post_href}")
+                    print(f"🔄 [{env}] {tgt['name']} 본문 진입 시도 ({i+1}번째 텍스트 게시글): {post_href}")
                     await page.goto(post_href, wait_until="load", timeout=15000)
                     await asyncio.sleep(2.5)
                     
@@ -422,7 +424,7 @@ async def task_runner(sem, ctx, env, tgt, queue):
                 if not found_any_ads:
                     print(f"❌ [{env}] {tgt['name']} 후보 게시글 3개를 모두 탐색했으나 유효 광고를 찾지 못했습니다.")
             else:
-                print(f"⚠️ [{env}] {tgt['name']} 안전한 일반 게시글 후보를 찾지 못했습니다.")
+                print(f"⚠️ [{env}] {tgt['name']} 짤방이 뜨는 순수 텍스트 게시글을 찾지 못했습니다.")
         except Exception as e: print(f"⚠️ [{env}] {tgt['name']} 전체 에러: {e}")
         finally:
             try: await page.close()
