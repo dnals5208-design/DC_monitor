@@ -197,18 +197,16 @@ async def capture_ads(context, page, env, gallery, page_type):
             # 🔥 MO/PC 스크롤 최적화 로직 (Lazy Loading 완벽 대응)
             if page_type == "본문":
                 if env == "MO":
-                    # MO는 본문 중간(50%)에 짤방 배너가 뜹니다. 중간에서 확실하게 기다려줍니다!
                     await asyncio.sleep(1.0)
                     await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.25);")
                     await asyncio.sleep(0.5)
                     await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.50);")
-                    await asyncio.sleep(3.0) # ⏳ 핵심 대기 포인트: 여기서 짤방이 로딩될 시간을 충분히 줍니다.
+                    await asyncio.sleep(3.0) 
                     await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.75);")
                     await asyncio.sleep(0.5)
                     await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
                     await asyncio.sleep(0.5)
                 else:
-                    # PC 본문
                     await asyncio.sleep(2.0)
                     await page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.5);")
                     await asyncio.sleep(0.5)
@@ -218,7 +216,6 @@ async def capture_ads(context, page, env, gallery, page_type):
                 await page.evaluate("window.scrollTo(0, 0);")
                 await asyncio.sleep(0.5)
             else:
-                # 리스트 페이지
                 await asyncio.sleep(1.5)
                 await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 3);")
                 await asyncio.sleep(0.5)
@@ -282,14 +279,12 @@ async def capture_ads(context, page, env, gallery, page_type):
                     if clean_txt in ["광고안내", "갤러리", "이미지 배너", "null", "dcinside.com"]: clean_txt = ""
                     if not clean_img and not clean_txt: continue
 
-                    # 외부 네트워크 광고 필터링
                     external_ad_networks = ["google", "adsrvr", "criteo", "taboola", "doubleclick", "adnxs", "smartadserver", "naver.com", "ader.naver.com", "nclick", "kakao", "daum", "mobon", "exelbid"]
                     if any(k in clean_href for k in external_ad_networks): continue
 
                     junk_images = ["close", "x_btn", "traffic_", "default_banner", "noimage", "icon", "btn_ad_close"]
                     if clean_img and any(j in clean_img.lower() for j in junk_images): continue
 
-                    # 디시 직판 광고/제휴 광고 판단 기준 (utm_source가 있다면 거의 100% 직판 광고)
                     is_real_ad = any(x in clean_href for x in ["addc.dc", "netinsight", "toast", "utm_source"])
                     if not is_real_ad: continue
 
@@ -360,7 +355,7 @@ async def task_runner(sem, ctx, env, tgt, queue):
 
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
 
-            # 🔥 스마트 게시글 판독기: '설문', '공지'가 아닌 "진짜 일반 게시글"만 찾아 들어갑니다.
+            # 🔥 20번째 게시글 강제 타겟팅 로직 탑재!
             post_href = None
             if env == "PC":
                 rows = await page.locator("tr.us-post").all()
@@ -374,12 +369,16 @@ async def task_runner(sem, ctx, env, tgt, queue):
                     except: continue
             else:
                 rows = await page.locator("ul.gall-detail-lst li").all()
-                for row in rows:
+                # 🚨 MO 환경 핵심: 상단 지뢰밭(설문, AD, 공지)을 피하기 위해 20번째 게시글(인덱스 19)부터 탐색!
+                search_rows = rows[19:] if len(rows) > 19 else rows 
+                
+                for row in search_rows:
                     try:
                         class_name = await row.get_attribute("class") or ""
                         if "notice" in class_name or "sp-lst" in class_name: continue
                         title_text = await row.inner_text()
-                        if "설문" not in title_text and "공지" not in title_text:
+                        # 'AD' 뱃지가 달린 게시물도 필터링에 추가
+                        if "설문" not in title_text and "공지" not in title_text and "AD" not in title_text:
                             a_tag = row.locator("a.lt").first
                             post_href = await a_tag.get_attribute("href")
                             if post_href: break
