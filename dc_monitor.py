@@ -355,7 +355,7 @@ async def task_runner(sem, ctx, env, tgt, queue):
 
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
 
-            # 🔥 20번째 게시글 강제 타겟팅 로직 탑재!
+            # 🔥 15번째(인덱스 14) 게시글 강제 타겟팅 및 '광고' 필터링 로직 탑재!
             post_href = None
             if env == "PC":
                 rows = await page.locator("tr.us-post").all()
@@ -369,16 +369,17 @@ async def task_runner(sem, ctx, env, tgt, queue):
                     except: continue
             else:
                 rows = await page.locator("ul.gall-detail-lst li").all()
-                # 🚨 MO 환경 핵심: 상단 지뢰밭(설문, AD, 공지)을 피하기 위해 20번째 게시글(인덱스 19)부터 탐색!
-                search_rows = rows[19:] if len(rows) > 19 else rows 
+                # 🚨 MO 환경 핵심: 상단 지뢰밭을 피하기 위해 15번째 게시글(인덱스 14)부터 탐색!
+                search_rows = rows[14:] if len(rows) > 14 else rows 
                 
                 for row in search_rows:
                     try:
                         class_name = await row.get_attribute("class") or ""
                         if "notice" in class_name or "sp-lst" in class_name: continue
+                        
                         title_text = await row.inner_text()
-                        # 'AD' 뱃지가 달린 게시물도 필터링에 추가
-                        if "설문" not in title_text and "공지" not in title_text and "AD" not in title_text:
+                        # 🔥 '광고', 'AD', '설문', '공지'가 하나라도 포함된 게시글은 무조건 필터링!
+                        if not any(bad_word in title_text for bad_word in ["설문", "공지", "AD", "광고"]):
                             a_tag = row.locator("a.lt").first
                             post_href = await a_tag.get_attribute("href")
                             if post_href: break
