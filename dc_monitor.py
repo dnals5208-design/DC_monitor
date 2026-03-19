@@ -3,6 +3,7 @@ import random
 import time
 import os
 import re
+import gc  # 🔥 메모리 다이어트를 위한 가비지 컬렉터
 from playwright.async_api import async_playwright
 import gspread
 from datetime import datetime, timedelta, timezone
@@ -77,6 +78,7 @@ async def uploader_worker(queue, ws):
             print(f"🚀 [서버 {CHUNK_INDEX+1}] 100개 도달! 중간 업로드 중...")
             await asyncio.to_thread(safe_batch_upload, ws, buffer)
             buffer.clear()
+            gc.collect() # 🔥 업로드 후 메모리 강제 청소
         queue.task_done()
     if buffer:
         await asyncio.to_thread(safe_batch_upload, ws, buffer)
@@ -123,7 +125,6 @@ def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
         else:
             pos_result = f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 게시글배너" if page_type == "본문" else f"{page_kr} 상단배너"
 
-    # 영역명 강제 정상화
     if page_type == "리스트" and "본문" in pos_result:
         return "리스트 공지"
 
@@ -180,8 +181,11 @@ async def capture_ads(context, page, env, gallery, page_type):
             print(f"🚨 {prefix} [비상 탈출] 15회 시도 동안 유효 광고 0개! (광고 없는 페이지로 간주하여 스킵)")
             break
 
+        # 🔥 세션 초기화 및 초강력 쓰레기 청소 (10회 주기)
         if total_attempts > 0 and total_attempts % 10 == 0:
-            try: await context.clear_cookies()
+            try: 
+                await context.clear_cookies()
+                gc.collect() # 파이썬 내부 메모리 찌꺼기 강제 삭제
             except: pass
 
         total_attempts += 1
@@ -351,17 +355,14 @@ async def task_runner(sem, ctx, env, tgt, queue):
 
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
 
-            # 🔥 [다중 후보 확보 로직] 사용자 인사이트(icon_txt, 순수 숫자) 완벽 반영!
             safe_post_hrefs = []
             
             if env == "PC":
                 rows = await page.locator("tr.us-post").all()
                 for row in rows:
                     try:
-                        # 1. 갤넘버가 순수 숫자인지 확인 (공지글 완벽 차단)
                         num_text = await row.locator("td.gall_num").inner_text()
                         if num_text.strip().isdigit():
-                            # 2. 본문 짤방이 뜨는 '텍스트 게시글(icon_txt)'만 타겟팅 (icon_pic 제외)
                             icon_txt_count = await row.locator("em.icon_txt").count()
                             if icon_txt_count > 0:
                                 a_tag = row.locator("td.gall_tit > a:not(.reply_numbox)").first
@@ -379,7 +380,6 @@ async def task_runner(sem, ctx, env, tgt, queue):
                         
                         title_text = await row.inner_text()
                         if not any(bad_word in title_text for bad_word in ["설문", "공지", "AD", "광고"]):
-                            # MO에서도 사진 아이콘(ico-pic)이 있는 게시글은 패스하도록 보수적 접근
                             pic_icon_count = await row.locator(".ico-pic, .ic-pic").count()
                             if pic_icon_count == 0:
                                 a_tag = row.locator("a").first
@@ -429,20 +429,33 @@ async def task_runner(sem, ctx, env, tgt, queue):
         finally:
             try: await page.close()
             except: pass
+            gc.collect() # 🔥 페이지 닫고 나서 한 번 더 메모리 강제 청소
 
 # --- 🚀 메인 실행 ---
 async def main():
     if not TARGET_GALLERIES: return
     print(f"🚀 [서버 {CHUNK_INDEX+1}/{TOTAL_CHUNKS}] 갤러리 {len(TARGET_GALLERIES)}개 담당 시작!")
 
-    gc = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
-    ws = gc.open_by_url(SHEET_URL).get_worksheet(0)
+    gc.enable() # 🔥 가비지 컬렉터 활성화 확인
+    gc_cred = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
+    ws = gc_cred.open_by_url(SHEET_URL).get_worksheet(0)
 
     async with async_playwright() as p:
+        # 🔥 절대 방어 2: 크로미움 초경량화 & 메모리 터짐 방지 옵션 풀세트 장착
         pc_context_opts = { "viewport": {"width": 1920, "height": 1080}, "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" }
         mo_context_opts = { "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-G991N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36", "viewport": {"width": 390, "height": 844}, "is_mobile": True, "has_touch": True }
 
-        browser = await p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-web-security"])
+        browser = await p.chromium.launch(
+            headless=True, 
+            args=[
+                "--disable-blink-features=AutomationControlled", 
+                "--no-sandbox", 
+                "--disable-web-security",
+                "--disable-dev-shm-usage", # 🔥 OOM 방지 핵심 치트키
+                "--disable-gpu",           # 🔥 불필요한 그래픽 연산 중지
+                "--no-zygote"              # 🔥 프로세스 경량화
+            ]
+        )
         pc_ctx, mo_ctx = await browser.new_context(**pc_context_opts), await browser.new_context(**mo_context_opts)
 
         sem, queue = asyncio.Semaphore(5), asyncio.Queue()
