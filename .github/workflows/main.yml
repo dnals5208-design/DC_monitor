@@ -28,8 +28,8 @@ jobs:
     needs: clean-sheet
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false  # 🔥 핵심 추가: 한 대가 에러로 죽어도 나머지는 강제 종료(Canceled)하지 말고 끝까지 완주해라!
       matrix:
-        # 🔥 0부터 9까지 총 10대의 서버를 띄웁니다!
         chunk: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] 
     steps:
     - uses: actions/checkout@v6
