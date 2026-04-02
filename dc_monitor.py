@@ -181,11 +181,10 @@ async def capture_ads(context, page, env, gallery, page_type):
             print(f"🚨 {prefix} [비상 탈출] 15회 시도 동안 유효 광고 0개! (광고 없는 페이지로 간주하여 스킵)")
             break
 
-        # 🔥 세션 초기화 및 초강력 쓰레기 청소 (10회 주기)
         if total_attempts > 0 and total_attempts % 10 == 0:
             try: 
                 await context.clear_cookies()
-                gc.collect() # 파이썬 내부 메모리 찌꺼기 강제 삭제
+                gc.collect() 
             except: pass
 
         total_attempts += 1
@@ -376,12 +375,15 @@ async def task_runner(sem, ctx, env, tgt, queue):
                 for row in search_rows:
                     try:
                         class_name = await row.get_attribute("class") or ""
-                        if "notice" in class_name or "sp-lst" in class_name: continue
+                        if "notice" in class_name: continue
                         
                         title_text = await row.inner_text()
                         if not any(bad_word in title_text for bad_word in ["설문", "공지", "AD", "광고"]):
-                            pic_icon_count = await row.locator(".ico-pic, .ic-pic").count()
-                            if pic_icon_count == 0:
+                            # 🔥 MO 환경 핵심: sp-lst-img가 없고, sp-lst-txt가 있는 순수 텍스트 게시글만 추출
+                            txt_icon_count = await row.locator(".sp-lst-txt").count()
+                            img_icon_count = await row.locator(".sp-lst-img").count()
+                            
+                            if txt_icon_count > 0 and img_icon_count == 0:
                                 a_tag = row.locator("a").first
                                 href = await a_tag.get_attribute("href")
                                 if href: safe_post_hrefs.append(href)
@@ -429,19 +431,18 @@ async def task_runner(sem, ctx, env, tgt, queue):
         finally:
             try: await page.close()
             except: pass
-            gc.collect() # 🔥 페이지 닫고 나서 한 번 더 메모리 강제 청소
+            gc.collect()
 
 # --- 🚀 메인 실행 ---
 async def main():
     if not TARGET_GALLERIES: return
     print(f"🚀 [서버 {CHUNK_INDEX+1}/{TOTAL_CHUNKS}] 갤러리 {len(TARGET_GALLERIES)}개 담당 시작!")
 
-    gc.enable() # 🔥 가비지 컬렉터 활성화 확인
+    gc.enable()
     gc_cred = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
     ws = gc_cred.open_by_url(SHEET_URL).get_worksheet(0)
 
     async with async_playwright() as p:
-        # 🔥 절대 방어 2: 크로미움 초경량화 & 메모리 터짐 방지 옵션 풀세트 장착
         pc_context_opts = { "viewport": {"width": 1920, "height": 1080}, "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" }
         mo_context_opts = { "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-G991N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36", "viewport": {"width": 390, "height": 844}, "is_mobile": True, "has_touch": True }
 
@@ -451,17 +452,18 @@ async def main():
                 "--disable-blink-features=AutomationControlled", 
                 "--no-sandbox", 
                 "--disable-web-security",
-                "--disable-dev-shm-usage", # 🔥 OOM 방지 핵심 치트키
-                "--disable-gpu",           # 🔥 불필요한 그래픽 연산 중지
-                "--no-zygote"              # 🔥 프로세스 경량화
+                "--disable-dev-shm-usage", 
+                "--disable-gpu",           
+                "--no-zygote"              
             ]
         )
         pc_ctx, mo_ctx = await browser.new_context(**pc_context_opts), await browser.new_context(**mo_context_opts)
 
-        sem, queue = asyncio.Semaphore(5), asyncio.Queue()
+        sem = asyncio.Semaphore(5), asyncio.Queue()
+        queue = sem[1]
         uploader = asyncio.create_task(uploader_worker(queue, ws))
 
-        tasks = [task_runner(sem, pc_ctx, "PC", t, queue) for t in TARGET_GALLERIES] + [task_runner(sem, mo_ctx, "MO", t, queue) for t in TARGET_GALLERIES]
+        tasks = [task_runner(sem[0], pc_ctx, "PC", t, queue) for t in TARGET_GALLERIES] + [task_runner(sem[0], mo_ctx, "MO", t, queue) for t in TARGET_GALLERIES]
         await asyncio.gather(*tasks)
         await browser.close()
 
