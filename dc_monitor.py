@@ -125,6 +125,7 @@ def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
         else:
             pos_result = f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 게시글배너" if page_type == "본문" else f"{page_kr} 상단배너"
 
+    # 영역명 강제 정상화
     if page_type == "리스트" and "본문" in pos_result:
         return "리스트 공지"
 
@@ -354,22 +355,34 @@ async def task_runner(sem, ctx, env, tgt, queue):
 
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
 
+            # 🔥 [다중 후보 확보 로직] 완벽한 HTML 감식기 탑재!
             safe_post_hrefs = []
             
             if env == "PC":
                 rows = await page.locator("tr.us-post").all()
                 for row in rows:
                     try:
+                        # 1. 갤넘버 숫자 체크 (공지글 원천 차단)
                         num_text = await row.locator("td.gall_num").inner_text()
-                        if num_text.strip().isdigit():
-                            icon_txt_count = await row.locator("em.icon_txt").count()
-                            if icon_txt_count > 0:
-                                a_tag = row.locator("td.gall_tit > a:not(.reply_numbox)").first
-                                href = await a_tag.get_attribute("href")
-                                if href: safe_post_hrefs.append(href)
+                        if not num_text.strip().isdigit():
+                            continue
+                            
+                        # 2. DOM 속성과 HTML을 이중 검사하여 순수 텍스트 글만 추출
+                        data_type = await row.get_attribute("data-type") or ""
+                        html_content = await row.inner_html()
+                        
+                        # 이미지가 포함된 게시글(icon_pic)은 짤방배너가 안뜨므로 무조건 거름
+                        if "icon_pic" in html_content or "icon_play" in html_content:
+                            continue
+                            
+                        if data_type == "icon_txt" or "icon_txt" in html_content:
+                            a_tag = row.locator("td.gall_tit > a:not(.reply_numbox)").first
+                            href = await a_tag.get_attribute("href")
+                            if href: safe_post_hrefs.append(href)
                     except: continue
             else:
                 rows = await page.locator("ul.gall-detail-lst > li").all()
+                # 상단 지뢰밭을 피하기 위해 15번째 게시글(인덱스 14)부터 탐색
                 search_rows = rows[14:] if len(rows) > 14 else rows 
                 
                 for row in search_rows:
@@ -378,15 +391,21 @@ async def task_runner(sem, ctx, env, tgt, queue):
                         if "notice" in class_name: continue
                         
                         title_text = await row.inner_text()
-                        if not any(bad_word in title_text for bad_word in ["설문", "공지", "AD", "광고"]):
-                            # 🔥 MO 환경 핵심: sp-lst-img가 없고, sp-lst-txt가 있는 순수 텍스트 게시글만 추출
-                            txt_icon_count = await row.locator(".sp-lst-txt").count()
-                            img_icon_count = await row.locator(".sp-lst-img").count()
+                        if any(bad_word in title_text for bad_word in ["설문", "공지", "AD", "광고"]):
+                            continue
                             
-                            if txt_icon_count > 0 and img_icon_count == 0:
-                                a_tag = row.locator("a").first
-                                href = await a_tag.get_attribute("href")
-                                if href: safe_post_hrefs.append(href)
+                        # 🔥 핵심: inner_html을 뜯어서 문자열로 이미지 유무를 물리적으로 검사
+                        html_content = await row.inner_html()
+                        
+                        # 이미지가 있는 글(sp-lst-img)이나 동영상(sp-lst-play)은 무조건 버림!
+                        if "sp-lst-img" in html_content or "sp-lst-play" in html_content:
+                            continue
+                            
+                        # 오직 텍스트 아이콘(sp-lst-txt)만 있는 글만 통과!
+                        if "sp-lst-txt" in html_content:
+                            a_tag = row.locator("a").first
+                            href = await a_tag.get_attribute("href")
+                            if href: safe_post_hrefs.append(href)
                     except: continue
 
             print(f"🔍 [{env}] {tgt['name']} 본문 탐색 후보(텍스트전용) 확보 완료: {len(safe_post_hrefs)}개")
@@ -459,11 +478,10 @@ async def main():
         )
         pc_ctx, mo_ctx = await browser.new_context(**pc_context_opts), await browser.new_context(**mo_context_opts)
 
-        sem = asyncio.Semaphore(5), asyncio.Queue()
-        queue = sem[1]
+        sem, queue = asyncio.Semaphore(5), asyncio.Queue()
         uploader = asyncio.create_task(uploader_worker(queue, ws))
 
-        tasks = [task_runner(sem[0], pc_ctx, "PC", t, queue) for t in TARGET_GALLERIES] + [task_runner(sem[0], mo_ctx, "MO", t, queue) for t in TARGET_GALLERIES]
+        tasks = [task_runner(sem, pc_ctx, "PC", t, queue) for t in TARGET_GALLERIES] + [task_runner(sem, mo_ctx, "MO", t, queue) for t in TARGET_GALLERIES]
         await asyncio.gather(*tasks)
         await browser.close()
 
