@@ -78,7 +78,7 @@ async def uploader_worker(queue, ws):
             print(f"🚀 [서버 {CHUNK_INDEX+1}] 100개 도달! 중간 업로드 중...")
             await asyncio.to_thread(safe_batch_upload, ws, buffer)
             buffer.clear()
-            gc.collect() # 🔥 업로드 후 메모리 강제 청소
+            gc.collect() 
         queue.task_done()
     if buffer:
         await asyncio.to_thread(safe_batch_upload, ws, buffer)
@@ -125,7 +125,6 @@ def get_korean_position(env, page_type, raw_pos, is_image, raw_href, urls_text):
         else:
             pos_result = f"{page_kr} 하단배너" if "bottom" in raw or "btm" in raw else f"{page_kr} 게시글배너" if page_type == "본문" else f"{page_kr} 상단배너"
 
-    # 영역명 강제 정상화
     if page_type == "리스트" and "본문" in pos_result:
         return "리스트 공지"
 
@@ -140,7 +139,8 @@ async def get_final_landing_url(context, redirect_url, referer_url):
     try:
         temp = await context.new_page()
         await temp.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "media", "font", "stylesheet"] else route.continue_())
-        try: await temp.goto(redirect_url, referer=referer_url, wait_until="commit", timeout=5000)
+        # 🔥 추적 페이지도 타임아웃 10초로 연장
+        try: await temp.goto(redirect_url, referer=referer_url, wait_until="commit", timeout=10000)
         except: pass
 
         for _ in range(25):
@@ -193,7 +193,8 @@ async def capture_ads(context, page, env, gallery, page_type):
 
         try:
             await page.evaluate("window.scrollTo(0, 0);")
-            await page.reload(wait_until="load", timeout=12000)
+            # 🔥 렉 대응 패치: load 대신 domcontentloaded, timeout 30초로 넉넉하게 연장
+            await page.reload(wait_until="domcontentloaded", timeout=30000)
 
             if page_type == "본문":
                 if env == "MO":
@@ -337,7 +338,8 @@ async def task_runner(sem, ctx, env, tgt, queue):
             target_url = tgt['pc'] if env == "PC" else tgt['mo']
             gallery_id = target_url.split("id=")[-1].split("&")[0] if "id=" in target_url else target_url.split("/")[-1]
 
-            await page.goto(target_url, wait_until="load", timeout=15000)
+            # 🔥 렉 대응 패치: 진입 시 타임아웃 30초 연장, 로딩 대기 조건 완화
+            await page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
             await asyncio.sleep(1.5)
 
             page_title, current_url = await page.title(), page.url.lower()
@@ -347,7 +349,8 @@ async def task_runner(sem, ctx, env, tgt, queue):
             if keyword not in page_title.replace(" ", "") or current_url in bounce_urls:
                 test_urls = [f"https://gall.dcinside.com/board/lists/?id={gallery_id}", f"https://gall.dcinside.com/mgallery/board/lists/?id={gallery_id}", f"https://gall.dcinside.com/mini/board/lists/?id={gallery_id}"] if env == "PC" else [f"https://m.dcinside.com/board/{gallery_id}", f"https://m.dcinside.com/mini/{gallery_id}"]
                 for t_url in test_urls:
-                    await page.goto(t_url, wait_until="load", timeout=12000)
+                    # 🔥 렉 대응 패치
+                    await page.goto(t_url, wait_until="domcontentloaded", timeout=30000)
                     await asyncio.sleep(1)
                     if keyword in (await page.title()).replace(" ", ""): break
 
@@ -355,23 +358,19 @@ async def task_runner(sem, ctx, env, tgt, queue):
 
             for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
 
-            # 🔥 [다중 후보 확보 로직] 완벽한 HTML 감식기 탑재!
             safe_post_hrefs = []
             
             if env == "PC":
                 rows = await page.locator("tr.us-post").all()
                 for row in rows:
                     try:
-                        # 1. 갤넘버 숫자 체크 (공지글 원천 차단)
                         num_text = await row.locator("td.gall_num").inner_text()
                         if not num_text.strip().isdigit():
                             continue
                             
-                        # 2. DOM 속성과 HTML을 이중 검사하여 순수 텍스트 글만 추출
                         data_type = await row.get_attribute("data-type") or ""
                         html_content = await row.inner_html()
                         
-                        # 이미지가 포함된 게시글(icon_pic)은 짤방배너가 안뜨므로 무조건 거름
                         if "icon_pic" in html_content or "icon_play" in html_content:
                             continue
                             
@@ -382,7 +381,6 @@ async def task_runner(sem, ctx, env, tgt, queue):
                     except: continue
             else:
                 rows = await page.locator("ul.gall-detail-lst > li").all()
-                # 상단 지뢰밭을 피하기 위해 15번째 게시글(인덱스 14)부터 탐색
                 search_rows = rows[14:] if len(rows) > 14 else rows 
                 
                 for row in search_rows:
@@ -394,14 +392,11 @@ async def task_runner(sem, ctx, env, tgt, queue):
                         if any(bad_word in title_text for bad_word in ["설문", "공지", "AD", "광고"]):
                             continue
                             
-                        # 🔥 핵심: inner_html을 뜯어서 문자열로 이미지 유무를 물리적으로 검사
                         html_content = await row.inner_html()
                         
-                        # 이미지가 있는 글(sp-lst-img)이나 동영상(sp-lst-play)은 무조건 버림!
                         if "sp-lst-img" in html_content or "sp-lst-play" in html_content:
                             continue
                             
-                        # 오직 텍스트 아이콘(sp-lst-txt)만 있는 글만 통과!
                         if "sp-lst-txt" in html_content:
                             a_tag = row.locator("a").first
                             href = await a_tag.get_attribute("href")
@@ -429,7 +424,8 @@ async def task_runner(sem, ctx, env, tgt, queue):
                             post_href = post_href.replace("gall.dcinside.com", "m.dcinside.com").replace("/board/view/?id=", "/board/")
 
                     print(f"🔄 [{env}] {tgt['name']} 본문 진입 시도 ({i+1}번째 텍스트 게시글): {post_href}")
-                    await page.goto(post_href, wait_until="load", timeout=15000)
+                    # 🔥 렉 대응 패치
+                    await page.goto(post_href, wait_until="domcontentloaded", timeout=30000)
                     await asyncio.sleep(2.5)
                     
                     body_results = await capture_ads(ctx, page, env, tgt['name'], "본문")
