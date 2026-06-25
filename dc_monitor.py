@@ -139,7 +139,6 @@ async def get_final_landing_url(context, redirect_url, referer_url):
     try:
         temp = await context.new_page()
         await temp.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "media", "font", "stylesheet"] else route.continue_())
-        # 🔥 추적 페이지도 타임아웃 10초로 연장
         try: await temp.goto(redirect_url, referer=referer_url, wait_until="commit", timeout=10000)
         except: pass
 
@@ -162,9 +161,9 @@ async def block_resources(route):
 
 
 # --- 🔍 광고 탐색 핵심 엔진 ---
-async def capture_ads(context, page, env, gallery, page_type):
+# 🔥 global_seen_set 추가: 재시도하더라도 이미 수집된 광고는 완벽하게 무시하여 중복 방지
+async def capture_ads(context, page, env, gallery, page_type, global_seen_set):
     collected = []
-    seen = set()
 
     KST = timezone(timedelta(hours=9))
     today = datetime.now(KST).strftime("%Y-%m-%d")
@@ -193,8 +192,10 @@ async def capture_ads(context, page, env, gallery, page_type):
 
         try:
             await page.evaluate("window.scrollTo(0, 0);")
-            # 🔥 렉 대응 패치: load 대신 domcontentloaded, timeout 30초로 넉넉하게 연장
-            await page.reload(wait_until="domcontentloaded", timeout=30000)
+            try:
+                await page.reload(wait_until="domcontentloaded", timeout=25000)
+            except:
+                pass # 타임아웃 무시 강제돌파
 
             if page_type == "본문":
                 if env == "MO":
@@ -304,10 +305,12 @@ async def capture_ads(context, page, env, gallery, page_type):
 
                     has_img = bool(clean_img)
                     pos = get_korean_position(env, page_type, raw_pos, has_img, raw_href, clean_href + " " + clean_final)
+                    
                     ad_signature = f"{pos}|{clean_img}|{clean_final}"
 
-                    if ad_signature not in seen:
-                        seen.add(ad_signature)
+                    # 🔥 재시도 과정에서 이미 큐에 넣었던 광고라면 완벽하게 무시! (중복 방지)
+                    if ad_signature not in global_seen_set:
+                        global_seen_set.add(ad_signature)
                         text_val = "이미지 배너" if has_img and not clean_txt else clean_txt
                         print(f"✅ {prefix} [유효 {valid_attempts+1}/{max_valid}회차] {pos} (새로운 소재 추가)")
                         collected.append({
@@ -319,134 +322,150 @@ async def capture_ads(context, page, env, gallery, page_type):
         if found_dc_ad_in_this_round:
             valid_attempts += 1
             if valid_attempts % 10 == 0:
-                print(f"📊 {prefix} [진행률] 유효 {valid_attempts}/{max_valid}회 완료 (누적 시도: {total_attempts}, 수집 소재: {len(collected)}개)")
+                print(f"📊 {prefix} [진행률] 유효 {valid_attempts}/{max_valid}회 완료 (누적 시도: {total_attempts}, 신규 수집 소재: {len(collected)}개)")
         else:
             print(f"⚠️ {prefix} [전체 구글광고 덮임] 카운트 미차감 (현재 유효: {valid_attempts}/{max_valid}, 누적 시도: {total_attempts})")
 
-    print(f"🏁 {prefix} 수집 종료! 유효 {valid_attempts}/{max_valid}회, 총 시도 {total_attempts}회, 수집 소재 {len(collected)}개")
+    print(f"🏁 {prefix} 수집 종료! 유효 {valid_attempts}/{max_valid}회, 총 시도 {total_attempts}회, 신규 수집 소재 {len(collected)}개")
     return collected
 
 
-# --- ⚡ 단일 갤러리+환경 작업 실행기 ---
+# --- ⚡ 단일 갤러리+환경 작업 실행기 (🔥 자동 부활 시스템 탑재) ---
 async def task_runner(sem, ctx, env, tgt, queue):
     async with sem:
-        await asyncio.sleep(random.uniform(0, 1.5))
-        page = await ctx.new_page()
-        page.on("dialog", lambda dialog: asyncio.create_task(dialog.accept()))
-        await page.route("**/*", block_resources)
-        try:
-            target_url = tgt['pc'] if env == "PC" else tgt['mo']
-            gallery_id = target_url.split("id=")[-1].split("&")[0] if "id=" in target_url else target_url.split("/")[-1]
+        global_seen_set = set() # 🔥 이 갤러리에서 수집한 광고 기록 (재시도 시 중복 방지용)
+        max_retries = 3         # 🔥 렉 걸리면 끄고 다시 시도할 최대 횟수
 
-            # 🔥 렉 대응 패치: 진입 시 타임아웃 30초 연장, 로딩 대기 조건 완화
-            await page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(1.5)
-
-            page_title, current_url = await page.title(), page.url.lower()
-            keyword = tgt['name'].replace("갤러리", "").replace(" ", "").strip()
-
-            bounce_urls = ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini"]
-            if keyword not in page_title.replace(" ", "") or current_url in bounce_urls:
-                test_urls = [f"https://gall.dcinside.com/board/lists/?id={gallery_id}", f"https://gall.dcinside.com/mgallery/board/lists/?id={gallery_id}", f"https://gall.dcinside.com/mini/board/lists/?id={gallery_id}"] if env == "PC" else [f"https://m.dcinside.com/board/{gallery_id}", f"https://m.dcinside.com/mini/{gallery_id}"]
-                for t_url in test_urls:
-                    # 🔥 렉 대응 패치
-                    await page.goto(t_url, wait_until="domcontentloaded", timeout=30000)
-                    await asyncio.sleep(1)
-                    if keyword in (await page.title()).replace(" ", ""): break
-
-            print(f"🌐 [{env}] {tgt['name']} 접속 완료. 리스트 수집 시작!")
-
-            for item in await capture_ads(ctx, page, env, tgt['name'], "리스트"): await queue.put(item)
-
-            safe_post_hrefs = []
+        for attempt in range(1, max_retries + 1):
+            await asyncio.sleep(random.uniform(0, 1.5))
+            page = await ctx.new_page()
+            page.on("dialog", lambda dialog: asyncio.create_task(dialog.accept()))
+            await page.route("**/*", block_resources)
             
-            if env == "PC":
-                rows = await page.locator("tr.us-post").all()
-                for row in rows:
-                    try:
-                        num_text = await row.locator("td.gall_num").inner_text()
-                        if not num_text.strip().isdigit():
-                            continue
-                            
-                        data_type = await row.get_attribute("data-type") or ""
-                        html_content = await row.inner_html()
-                        
-                        if "icon_pic" in html_content or "icon_play" in html_content:
-                            continue
-                            
-                        if data_type == "icon_txt" or "icon_txt" in html_content:
-                            a_tag = row.locator("td.gall_tit > a:not(.reply_numbox)").first
-                            href = await a_tag.get_attribute("href")
-                            if href: safe_post_hrefs.append(href)
-                    except: continue
-            else:
-                rows = await page.locator("ul.gall-detail-lst > li").all()
-                search_rows = rows[14:] if len(rows) > 14 else rows 
+            try:
+                target_url = tgt['pc'] if env == "PC" else tgt['mo']
+                gallery_id = target_url.split("id=")[-1].split("&")[0] if "id=" in target_url else target_url.split("/")[-1]
+
+                try: await page.goto(target_url, wait_until="domcontentloaded", timeout=25000)
+                except: print(f"⏳ [{env}] {tgt['name']} 접속 지연 뚫고 강제 진입! (시도 {attempt}/{max_retries})")
                 
-                for row in search_rows:
-                    try:
-                        class_name = await row.get_attribute("class") or ""
-                        if "notice" in class_name: continue
-                        
-                        title_text = await row.inner_text()
-                        if any(bad_word in title_text for bad_word in ["설문", "공지", "AD", "광고"]):
-                            continue
-                            
-                        html_content = await row.inner_html()
-                        
-                        if "sp-lst-img" in html_content or "sp-lst-play" in html_content:
-                            continue
-                            
-                        if "sp-lst-txt" in html_content:
-                            a_tag = row.locator("a").first
-                            href = await a_tag.get_attribute("href")
-                            if href: safe_post_hrefs.append(href)
-                    except: continue
+                await asyncio.sleep(2.0)
 
-            print(f"🔍 [{env}] {tgt['name']} 본문 탐색 후보(텍스트전용) 확보 완료: {len(safe_post_hrefs)}개")
+                page_title, current_url = await page.title(), page.url.lower()
+                keyword = tgt['name'].replace("갤러리", "").replace(" ", "").strip()
 
-            if safe_post_hrefs:
-                found_any_ads = False
-                for i, raw_post_href in enumerate(safe_post_hrefs[:3]):
-                    post_href = raw_post_href
-                    
-                    if not post_href.startswith("http"):
-                        post_href = ("https://gall.dcinside.com" if env == "PC" else "https://m.dcinside.com") + post_href
+                bounce_urls = ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini"]
+                if keyword not in page_title.replace(" ", "") or current_url in bounce_urls:
+                    test_urls = [f"https://gall.dcinside.com/board/lists/?id={gallery_id}", f"https://gall.dcinside.com/mgallery/board/lists/?id={gallery_id}", f"https://gall.dcinside.com/mini/board/lists/?id={gallery_id}"] if env == "PC" else [f"https://m.dcinside.com/board/{gallery_id}", f"https://m.dcinside.com/mini/{gallery_id}"]
+                    for t_url in test_urls:
+                        try: await page.goto(t_url, wait_until="domcontentloaded", timeout=25000)
+                        except: pass
+                        await asyncio.sleep(1.5)
+                        if keyword in (await page.title()).replace(" ", ""): break
 
-                    if env == "MO" and ("gall.dcinside.com" in post_href or "board/view" in post_href):
+                print(f"🌐 [{env}] {tgt['name']} 접속 완료. 리스트 수집 시작!")
+
+                # 🔥 global_seen_set을 넘겨주어 재시도 시 중복 방지
+                for item in await capture_ads(ctx, page, env, tgt['name'], "리스트", global_seen_set): 
+                    await queue.put(item)
+
+                safe_post_hrefs = []
+                
+                if env == "PC":
+                    rows = await page.locator("tr.us-post").all()
+                    for row in rows:
                         try:
-                            from urllib.parse import urlparse, parse_qs
-                            parsed = urlparse(post_href)
-                            qs = parse_qs(parsed.query)
-                            g_id, g_no = qs.get("id", [gallery_id])[0], qs.get("no", [""])[0]
-                            post_href = f"https://m.dcinside.com/board/{g_id}/{g_no}" if g_no else f"https://m.dcinside.com/board/{g_id}"
-                        except:
-                            post_href = post_href.replace("gall.dcinside.com", "m.dcinside.com").replace("/board/view/?id=", "/board/")
+                            num_text = await row.locator("td.gall_num").inner_text()
+                            if not num_text.strip().isdigit(): continue
+                                
+                            data_type = await row.get_attribute("data-type") or ""
+                            html_content = await row.inner_html()
+                            
+                            if "icon_pic" in html_content or "icon_play" in html_content: continue
+                                
+                            if data_type == "icon_txt" or "icon_txt" in html_content:
+                                a_tag = row.locator("td.gall_tit > a:not(.reply_numbox)").first
+                                href = await a_tag.get_attribute("href")
+                                if href: safe_post_hrefs.append(href)
+                        except: continue
+                else:
+                    rows = await page.locator("ul.gall-detail-lst > li").all()
+                    search_rows = rows[14:] if len(rows) > 14 else rows 
+                    
+                    for row in search_rows:
+                        try:
+                            class_name = await row.get_attribute("class") or ""
+                            if "notice" in class_name: continue
+                            
+                            title_text = await row.inner_text()
+                            if any(bad_word in title_text for bad_word in ["설문", "공지", "AD", "광고"]): continue
+                                
+                            html_content = await row.inner_html()
+                            
+                            if "sp-lst-img" in html_content or "sp-lst-play" in html_content: continue
+                                
+                            if "sp-lst-txt" in html_content:
+                                a_tag = row.locator("a").first
+                                href = await a_tag.get_attribute("href")
+                                if href: safe_post_hrefs.append(href)
+                        except: continue
 
-                    print(f"🔄 [{env}] {tgt['name']} 본문 진입 시도 ({i+1}번째 텍스트 게시글): {post_href}")
-                    # 🔥 렉 대응 패치
-                    await page.goto(post_href, wait_until="domcontentloaded", timeout=30000)
-                    await asyncio.sleep(2.5)
+                print(f"🔍 [{env}] {tgt['name']} 본문 탐색 후보(텍스트전용) 확보 완료: {len(safe_post_hrefs)}개")
+
+                if safe_post_hrefs:
+                    found_any_ads = False
+                    for i, raw_post_href in enumerate(safe_post_hrefs[:3]):
+                        post_href = raw_post_href
+                        
+                        if not post_href.startswith("http"):
+                            post_href = ("https://gall.dcinside.com" if env == "PC" else "https://m.dcinside.com") + post_href
+
+                        if env == "MO" and ("gall.dcinside.com" in post_href or "board/view" in post_href):
+                            try:
+                                from urllib.parse import urlparse, parse_qs
+                                parsed = urlparse(post_href)
+                                qs = parse_qs(parsed.query)
+                                g_id, g_no = qs.get("id", [gallery_id])[0], qs.get("no", [""])[0]
+                                post_href = f"https://m.dcinside.com/board/{g_id}/{g_no}" if g_no else f"https://m.dcinside.com/board/{g_id}"
+                            except:
+                                post_href = post_href.replace("gall.dcinside.com", "m.dcinside.com").replace("/board/view/?id=", "/board/")
+
+                        print(f"🔄 [{env}] {tgt['name']} 본문 진입 시도 ({i+1}번째 텍스트 게시글): {post_href}")
+                        
+                        try: await page.goto(post_href, wait_until="domcontentloaded", timeout=25000)
+                        except: print(f"⏳ [{env}] {tgt['name']} 본문 로딩 지연 뚫고 강제 진입!")
+                        
+                        await asyncio.sleep(2.5)
+                        
+                        # 🔥 global_seen_set 전달
+                        body_results = await capture_ads(ctx, page, env, tgt['name'], "본문", global_seen_set)
+                        
+                        if len(body_results) > 0:
+                            for item in body_results: await queue.put(item)
+                            found_any_ads = True
+                            break
+                        else:
+                            print(f"⚠️ [{env}] {tgt['name']} 해당 게시글에서 광고를 찾지 못했습니다. 다음 후보 게시글로 이동합니다.")
                     
-                    body_results = await capture_ads(ctx, page, env, tgt['name'], "본문")
-                    
-                    if len(body_results) > 0:
-                        for item in body_results:
-                            await queue.put(item)
-                        found_any_ads = True
-                        break
-                    else:
-                        print(f"⚠️ [{env}] {tgt['name']} 해당 게시글에서 광고를 찾지 못했습니다. 다음 후보 게시글로 이동합니다.")
+                    if not found_any_ads:
+                        print(f"❌ [{env}] {tgt['name']} 후보 게시글 3개를 모두 탐색했으나 유효 광고를 찾지 못했습니다.")
+                else:
+                    print(f"⚠️ [{env}] {tgt['name']} 짤방이 뜨는 순수 텍스트 게시글을 찾지 못했습니다.")
                 
-                if not found_any_ads:
-                    print(f"❌ [{env}] {tgt['name']} 후보 게시글 3개를 모두 탐색했으나 유효 광고를 찾지 못했습니다.")
-            else:
-                print(f"⚠️ [{env}] {tgt['name']} 짤방이 뜨는 순수 텍스트 게시글을 찾지 못했습니다.")
-        except Exception as e: print(f"⚠️ [{env}] {tgt['name']} 전체 에러: {e}")
-        finally:
-            try: await page.close()
-            except: pass
-            gc.collect()
+                # 🔥 모든 수집이 에러 없이 무사히 끝났다면 재시도 루프 탈출!
+                break 
+
+            except Exception as e: 
+                # 🔥 타임아웃이나 예기치 못한 에러 발생 시 여기서 캐치하여 탭 닫고 재시도
+                print(f"💥 [{env}] {tgt['name']} 에러 발생 (시도 {attempt}/{max_retries}): {e}")
+                if attempt < max_retries:
+                    print(f"🔄 [{env}] {tgt['name']} 탭을 강제 종료하고 새 탭에서 처음부터 재시도합니다! (중복수집 방지 켜짐)")
+                else:
+                    print(f"💀 [{env}] {tgt['name']} 최종 3회 실패. 다음 갤러리로 넘어갑니다.")
+            finally:
+                try: await page.close()
+                except: pass
+                gc.collect()
 
 # --- 🚀 메인 실행 ---
 async def main():
@@ -474,10 +493,11 @@ async def main():
         )
         pc_ctx, mo_ctx = await browser.new_context(**pc_context_opts), await browser.new_context(**mo_context_opts)
 
-        sem, queue = asyncio.Semaphore(5), asyncio.Queue()
+        sem = asyncio.Semaphore(5), asyncio.Queue()
+        queue = sem[1]
         uploader = asyncio.create_task(uploader_worker(queue, ws))
 
-        tasks = [task_runner(sem, pc_ctx, "PC", t, queue) for t in TARGET_GALLERIES] + [task_runner(sem, mo_ctx, "MO", t, queue) for t in TARGET_GALLERIES]
+        tasks = [task_runner(sem[0], pc_ctx, "PC", t, queue) for t in TARGET_GALLERIES] + [task_runner(sem[0], mo_ctx, "MO", t, queue) for t in TARGET_GALLERIES]
         await asyncio.gather(*tasks)
         await browser.close()
 
