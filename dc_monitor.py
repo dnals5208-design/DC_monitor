@@ -3,7 +3,7 @@ import random
 import time
 import os
 import re
-import gc  # 메모리 다이어트를 위한 가비지 컬렉터
+import gc  # 🔥 메모리 다이어트를 위한 가비지 컬렉터
 import traceback  # 🔥 상세 에러 원인을 역추적하기 위한 모듈 추가
 from playwright.async_api import async_playwright
 import gspread
@@ -195,7 +195,6 @@ async def capture_ads(context, page, env, gallery, page_type, global_seen_set):
             try:
                 await page.reload(wait_until="domcontentloaded", timeout=25000)
             except Exception as reload_err:
-                # 🔥 새로고침 중 터진 사소한 타임아웃의 진짜 원인을 로그에 상세히 기록
                 print(f"⏳ {prefix} 새로고침 대기 중 지연 발생(무시하고 강제 진행): {str(reload_err)}")
 
             if page_type == "본문":
@@ -330,7 +329,7 @@ async def capture_ads(context, page, env, gallery, page_type, global_seen_set):
     return collected
 
 
-# --- ⚡ 단일 갤러리+환경 작업 실행기 ---
+# --- ⚡ 단일 갤러리+환경 작업 실행기 (🔥 자동 부활 시스템 탑재) ---
 async def task_runner(sem, ctx, env, tgt, queue):
     async with sem:
         global_seen_set = set() 
@@ -359,7 +358,7 @@ async def task_runner(sem, ctx, env, tgt, queue):
                         current_url = page.url.lower()
                         break
                     except Exception as title_err:
-                        if idx == 3: raise title_err # 3번 다 실패하면 기습 새로고침 예외단으로 토스
+                        if idx == 3: raise title_err 
                         await asyncio.sleep(2.0) 
 
                 keyword = tgt['name'].replace("갤러리", "").replace(" ", "").strip()
@@ -472,13 +471,12 @@ async def task_runner(sem, ctx, env, tgt, queue):
                 break 
 
             except Exception as e: 
-                # 🔥 [핵심 수정: 원인 추적 시스템] 에러의 정확한 범인과 줄 번호, 원문을 로그에 통째로 인쇄!
                 print("\n" + "="*60)
                 print(f"🚨🚨 [하드코어 에러 감지] [{env}] {tgt['name']} (시도 회차: {attempt}/{max_retries})")
                 print(f"🎯 구체적인 에러 원문: {str(e)}")
                 print("-" * 60)
                 print("💻 상세 소스코드 파일 및 오류 라인 번호 추적 (Traceback):")
-                traceback.print_exc() # 터미널에 에러의 소스코드 줄 번호를 정확히 출력
+                traceback.print_exc() 
                 print("="*60 + "\n")
 
                 if attempt < max_retries:
@@ -516,14 +514,17 @@ async def main():
         )
         pc_ctx, mo_ctx = await browser.new_context(**pc_context_opts), await browser.new_context(**mo_context_opts)
 
-        sem, queue = asyncio.Semaphore(5), asyncio.Queue()
-        queue = sem[1]
+        # 🔥 완전히 분리하여 안전하게 선언
+        sem = asyncio.Semaphore(5)
+        queue = asyncio.Queue()
+        
         uploader = asyncio.create_task(uploader_worker(queue, ws))
 
-        tasks = [task_runner(sem[0], pc_ctx, "PC", t, queue) for t in TARGET_GALLERIES] + [task_runner(sem[0], mo_ctx, "MO", t, queue) for t in TARGET_GALLERIES]
+        tasks = [task_runner(sem, pc_ctx, "PC", t, queue) for t in TARGET_GALLERIES] + \
+                [task_runner(sem, mo_ctx, "MO", t, queue) for t in TARGET_GALLERIES]
         await asyncio.gather(*tasks)
-        browser_close_task = asyncio.create_task(browser.close())
-        await browser_close_task
+        
+        await browser.close()
 
         await queue.put(None)
         await uploader
