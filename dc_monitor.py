@@ -3,7 +3,8 @@ import random
 import time
 import os
 import re
-import gc  # 🔥 메모리 다이어트를 위한 가비지 컬렉터
+import gc  # 메모리 다이어트를 위한 가비지 컬렉터
+import traceback  # 🔥 상세 에러 원인을 역추적하기 위한 모듈 추가
 from playwright.async_api import async_playwright
 import gspread
 from datetime import datetime, timedelta, timezone
@@ -161,7 +162,6 @@ async def block_resources(route):
 
 
 # --- 🔍 광고 탐색 핵심 엔진 ---
-# 🔥 global_seen_set 추가: 재시도하더라도 이미 수집된 광고는 완벽하게 무시하여 중복 방지
 async def capture_ads(context, page, env, gallery, page_type, global_seen_set):
     collected = []
 
@@ -194,8 +194,9 @@ async def capture_ads(context, page, env, gallery, page_type, global_seen_set):
             await page.evaluate("window.scrollTo(0, 0);")
             try:
                 await page.reload(wait_until="domcontentloaded", timeout=25000)
-            except:
-                pass # 타임아웃 무시 강제돌파
+            except Exception as reload_err:
+                # 🔥 새로고침 중 터진 사소한 타임아웃의 진짜 원인을 로그에 상세히 기록
+                print(f"⏳ {prefix} 새로고침 대기 중 지연 발생(무시하고 강제 진행): {str(reload_err)}")
 
             if page_type == "본문":
                 if env == "MO":
@@ -225,15 +226,16 @@ async def capture_ads(context, page, env, gallery, page_type, global_seen_set):
                 await asyncio.sleep(0.5)
                 await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
                 await asyncio.sleep(1.0)
-        except:
-            pass
+        except Exception as scroll_err:
+            print(f"⚠️ {prefix} 스크롤 물리 제어 중 일시적 오류 로그: {str(scroll_err)}")
 
-        base_page_url = page.url.split('#')[0].split('?')[0].lower()
+        base_page_url = ""
+        try: base_page_url = page.url.split('#')[0].split('?')[0].lower()
+        except: pass
 
         for frame in page.frames:
             try:
                 for ad in await frame.locator("a").all():
-
                     raw_href_attr = await ad.get_attribute("href") or ""
                     clean_href_attr = raw_href_attr.strip().lower()
 
@@ -305,10 +307,8 @@ async def capture_ads(context, page, env, gallery, page_type, global_seen_set):
 
                     has_img = bool(clean_img)
                     pos = get_korean_position(env, page_type, raw_pos, has_img, raw_href, clean_href + " " + clean_final)
-                    
                     ad_signature = f"{pos}|{clean_img}|{clean_final}"
 
-                    # 🔥 재시도 과정에서 이미 큐에 넣었던 광고라면 완벽하게 무시! (중복 방지)
                     if ad_signature not in global_seen_set:
                         global_seen_set.add(ad_signature)
                         text_val = "이미지 배너" if has_img and not clean_txt else clean_txt
@@ -330,11 +330,11 @@ async def capture_ads(context, page, env, gallery, page_type, global_seen_set):
     return collected
 
 
-# --- ⚡ 단일 갤러리+환경 작업 실행기 (🔥 자동 부활 시스템 탑재) ---
+# --- ⚡ 단일 갤러리+환경 작업 실행기 ---
 async def task_runner(sem, ctx, env, tgt, queue):
     async with sem:
-        global_seen_set = set() # 🔥 이 갤러리에서 수집한 광고 기록 (재시도 시 중복 방지용)
-        max_retries = 3         # 🔥 렉 걸리면 끄고 다시 시도할 최대 횟수
+        global_seen_set = set() 
+        max_retries = 3         
 
         for attempt in range(1, max_retries + 1):
             await asyncio.sleep(random.uniform(0, 1.5))
@@ -347,68 +347,87 @@ async def task_runner(sem, ctx, env, tgt, queue):
                 gallery_id = target_url.split("id=")[-1].split("&")[0] if "id=" in target_url else target_url.split("/")[-1]
 
                 try: await page.goto(target_url, wait_until="domcontentloaded", timeout=25000)
-                except: print(f"⏳ [{env}] {tgt['name']} 접속 지연 뚫고 강제 진입! (시도 {attempt}/{max_retries})")
+                except Exception as goto_err: 
+                    print(f"⏳ [{env}] {tgt['name']} 리스트 진입 지연 발생 (강제 돌파 및 예외 수집 시도): {str(goto_err)}")
                 
                 await asyncio.sleep(2.0)
 
-                page_title, current_url = await page.title(), page.url.lower()
-                keyword = tgt['name'].replace("갤러리", "").replace(" ", "").strip()
+                page_title, current_url = "", ""
+                for idx in range(1, 4):
+                    try:
+                        page_title = await page.title()
+                        current_url = page.url.lower()
+                        break
+                    except Exception as title_err:
+                        if idx == 3: raise title_err # 3번 다 실패하면 기습 새로고침 예외단으로 토스
+                        await asyncio.sleep(2.0) 
 
+                keyword = tgt['name'].replace("갤러리", "").replace(" ", "").strip()
                 bounce_urls = ["https://www.dcinside.com", "https://gall.dcinside.com", "https://m.dcinside.com", "https://gall.dcinside.com/m", "https://gall.dcinside.com/mini"]
+                
                 if keyword not in page_title.replace(" ", "") or current_url in bounce_urls:
                     test_urls = [f"https://gall.dcinside.com/board/lists/?id={gallery_id}", f"https://gall.dcinside.com/mgallery/board/lists/?id={gallery_id}", f"https://gall.dcinside.com/mini/board/lists/?id={gallery_id}"] if env == "PC" else [f"https://m.dcinside.com/board/{gallery_id}", f"https://m.dcinside.com/mini/{gallery_id}"]
                     for t_url in test_urls:
                         try: await page.goto(t_url, wait_until="domcontentloaded", timeout=25000)
                         except: pass
                         await asyncio.sleep(1.5)
-                        if keyword in (await page.title()).replace(" ", ""): break
+                        
+                        title_check = ""
+                        for _ in range(3):
+                            try:
+                                title_check = await page.title()
+                                break
+                            except: await asyncio.sleep(2.0)
+                        if keyword in title_check.replace(" ", ""): break
 
                 print(f"🌐 [{env}] {tgt['name']} 접속 완료. 리스트 수집 시작!")
 
-                # 🔥 global_seen_set을 넘겨주어 재시도 시 중복 방지
                 for item in await capture_ads(ctx, page, env, tgt['name'], "리스트", global_seen_set): 
                     await queue.put(item)
 
                 safe_post_hrefs = []
                 
-                if env == "PC":
-                    rows = await page.locator("tr.us-post").all()
-                    for row in rows:
-                        try:
-                            num_text = await row.locator("td.gall_num").inner_text()
-                            if not num_text.strip().isdigit(): continue
+                try:
+                    if env == "PC":
+                        rows = await page.locator("tr.us-post").all()
+                        for row in rows:
+                            try:
+                                num_text = await row.locator("td.gall_num").inner_text()
+                                if not num_text.strip().isdigit(): continue
+                                    
+                                data_type = await row.get_attribute("data-type") or ""
+                                html_content = await row.inner_html()
                                 
-                            data_type = await row.get_attribute("data-type") or ""
-                            html_content = await row.inner_html()
-                            
-                            if "icon_pic" in html_content or "icon_play" in html_content: continue
+                                if "icon_pic" in html_content or "icon_play" in html_content: continue
+                                    
+                                if data_type == "icon_txt" or "icon_txt" in html_content:
+                                    a_tag = row.locator("td.gall_tit > a:not(.reply_numbox)").first
+                                    href = await a_tag.get_attribute("href")
+                                    if href: safe_post_hrefs.append(href)
+                            except: continue
+                    else:
+                        rows = await page.locator("ul.gall-detail-lst > li").all()
+                        search_rows = rows[14:] if len(rows) > 14 else rows 
+                        
+                        for row in search_rows:
+                            try:
+                                class_name = await row.get_attribute("class") or ""
+                                if "notice" in class_name: continue
                                 
-                            if data_type == "icon_txt" or "icon_txt" in html_content:
-                                a_tag = row.locator("td.gall_tit > a:not(.reply_numbox)").first
-                                href = await a_tag.get_attribute("href")
-                                if href: safe_post_hrefs.append(href)
-                        except: continue
-                else:
-                    rows = await page.locator("ul.gall-detail-lst > li").all()
-                    search_rows = rows[14:] if len(rows) > 14 else rows 
-                    
-                    for row in search_rows:
-                        try:
-                            class_name = await row.get_attribute("class") or ""
-                            if "notice" in class_name: continue
-                            
-                            title_text = await row.inner_text()
-                            if any(bad_word in title_text for bad_word in ["설문", "공지", "AD", "광고"]): continue
+                                title_text = await row.inner_text()
+                                if any(bad_word in title_text for bad_word in ["설문", "공지", "AD", "광고"]): continue
+                                    
+                                html_content = await row.inner_html()
                                 
-                            html_content = await row.inner_html()
-                            
-                            if "sp-lst-img" in html_content or "sp-lst-play" in html_content: continue
-                                
-                            if "sp-lst-txt" in html_content:
-                                a_tag = row.locator("a").first
-                                href = await a_tag.get_attribute("href")
-                                if href: safe_post_hrefs.append(href)
-                        except: continue
+                                if "sp-lst-img" in html_content or "sp-lst-play" in html_content: continue
+                                    
+                                if "sp-lst-txt" in html_content:
+                                    a_tag = row.locator("a").first
+                                    href = await a_tag.get_attribute("href")
+                                    if href: safe_post_hrefs.append(href)
+                            except: continue
+                except Exception as dom_err:
+                    print(f"⚠️ [{env}] {tgt['name']} 게시글 리스트 DOM 파싱 중 돌발 오류 포착: {dom_err}")
 
                 print(f"🔍 [{env}] {tgt['name']} 본문 탐색 후보(텍스트전용) 확보 완료: {len(safe_post_hrefs)}개")
 
@@ -433,11 +452,9 @@ async def task_runner(sem, ctx, env, tgt, queue):
                         print(f"🔄 [{env}] {tgt['name']} 본문 진입 시도 ({i+1}번째 텍스트 게시글): {post_href}")
                         
                         try: await page.goto(post_href, wait_until="domcontentloaded", timeout=25000)
-                        except: print(f"⏳ [{env}] {tgt['name']} 본문 로딩 지연 뚫고 강제 진입!")
+                        except: print(f"⏳ [{env}] {tgt['name']} 본문 진입 속도 지연 발생 (강제 주입 처리)")
                         
                         await asyncio.sleep(2.5)
-                        
-                        # 🔥 global_seen_set 전달
                         body_results = await capture_ads(ctx, page, env, tgt['name'], "본문", global_seen_set)
                         
                         if len(body_results) > 0:
@@ -452,16 +469,22 @@ async def task_runner(sem, ctx, env, tgt, queue):
                 else:
                     print(f"⚠️ [{env}] {tgt['name']} 짤방이 뜨는 순수 텍스트 게시글을 찾지 못했습니다.")
                 
-                # 🔥 모든 수집이 에러 없이 무사히 끝났다면 재시도 루프 탈출!
                 break 
 
             except Exception as e: 
-                # 🔥 타임아웃이나 예기치 못한 에러 발생 시 여기서 캐치하여 탭 닫고 재시도
-                print(f"💥 [{env}] {tgt['name']} 에러 발생 (시도 {attempt}/{max_retries}): {e}")
+                # 🔥 [핵심 수정: 원인 추적 시스템] 에러의 정확한 범인과 줄 번호, 원문을 로그에 통째로 인쇄!
+                print("\n" + "="*60)
+                print(f"🚨🚨 [하드코어 에러 감지] [{env}] {tgt['name']} (시도 회차: {attempt}/{max_retries})")
+                print(f"🎯 구체적인 에러 원문: {str(e)}")
+                print("-" * 60)
+                print("💻 상세 소스코드 파일 및 오류 라인 번호 추적 (Traceback):")
+                traceback.print_exc() # 터미널에 에러의 소스코드 줄 번호를 정확히 출력
+                print("="*60 + "\n")
+
                 if attempt < max_retries:
-                    print(f"🔄 [{env}] {tgt['name']} 탭을 강제 종료하고 새 탭에서 처음부터 재시도합니다! (중복수집 방지 켜짐)")
+                    print(f"🔄 [{env}] {tgt['name']} 탭 내부가 손상되어 강제 리셋 후 새 창에서 처음부터 재도전합니다.")
                 else:
-                    print(f"💀 [{env}] {tgt['name']} 최종 3회 실패. 다음 갤러리로 넘어갑니다.")
+                    print(f"💀 [{env}] {tgt['name']} 최종 3회 모두 오류가 발생하여 안전하게 탈출합니다.")
             finally:
                 try: await page.close()
                 except: pass
@@ -493,13 +516,14 @@ async def main():
         )
         pc_ctx, mo_ctx = await browser.new_context(**pc_context_opts), await browser.new_context(**mo_context_opts)
 
-        sem = asyncio.Semaphore(5), asyncio.Queue()
+        sem, queue = asyncio.Semaphore(5), asyncio.Queue()
         queue = sem[1]
         uploader = asyncio.create_task(uploader_worker(queue, ws))
 
         tasks = [task_runner(sem[0], pc_ctx, "PC", t, queue) for t in TARGET_GALLERIES] + [task_runner(sem[0], mo_ctx, "MO", t, queue) for t in TARGET_GALLERIES]
         await asyncio.gather(*tasks)
-        await browser.close()
+        browser_close_task = asyncio.create_task(browser.close())
+        await browser_close_task
 
         await queue.put(None)
         await uploader
