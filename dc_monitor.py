@@ -11,7 +11,17 @@ from datetime import datetime, timedelta, timezone
 
 # --- ⚙️ 설정 ---
 SERVICE_ACCOUNT_FILE = 'service_account2020.json'
-SHEET_URL = 'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0'
+
+# 🔥 [자동 라우팅 설정] 준비해주신 6개의 시트 URL 적용 완료!
+SHEET_URLS = [
+    'https://docs.google.com/spreadsheets/d/1omDVgsy4qwCKZMbuDLoKvJjNsOU1uqkfBqZIM7euezk/edit?gid=0#gid=0', # 1번 시트 (현재 메인)
+    'https://docs.google.com/spreadsheets/d/1T_m7FXkFwjWqDPeNzNPVYx-AWwNd3jyEuHCic6oZNjw/edit?gid=0#gid=0', # 1번이 꽉 차면 자동으로 이쪽으로 넘어갑니다.
+    'https://docs.google.com/spreadsheets/d/17BQ0QYStEXvZTVwdmrHdymB1rB1PSuccClayv_BjJnY/edit?gid=0#gid=0',
+    'https://docs.google.com/spreadsheets/d/1krVb_3wlhRSyld3I9auzz__Dye3LRGSZ6O3XETIVH0k/edit?gid=0#gid=0',
+    'https://docs.google.com/spreadsheets/d/1uFWAT2hiwXq50iGzwlyUNzzA80IM6P25JWWGnDZzZbI/edit?gid=0#gid=0',
+    'https://docs.google.com/spreadsheets/d/1juYK2brq-UHPkCElSi6ENrR6vpehmy8xbIH9YO3DtV8/edit?gid=0#gid=0'
+]
+ROW_LIMIT = 300000 # 한 시트당 30만 줄 제한
 
 ALL_GALLERIES = [
     {"name": "자격증갤러리","pc":"https://gall.dcinside.com/board/lists/?id=coq","mo":"https://m.dcinside.com/board/coq"},
@@ -226,7 +236,7 @@ async def capture_ads(context, page, env, gallery, page_type, global_seen_set):
                 await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
                 await asyncio.sleep(1.0)
         except Exception as scroll_err:
-            print(f"⚠️ {prefix} 스크롤 물리 제어 중 일시적 오류 로그: {str(scroll_err)}")
+            print(f"⚠️️ {prefix} 스크롤 물리 제어 중 일시적 오류 로그: {str(scroll_err)}")
 
         base_page_url = ""
         try: base_page_url = page.url.split('#')[0].split('?')[0].lower()
@@ -235,6 +245,7 @@ async def capture_ads(context, page, env, gallery, page_type, global_seen_set):
         for frame in page.frames:
             try:
                 for ad in await frame.locator("a").all():
+
                     raw_href_attr = await ad.get_attribute("href") or ""
                     clean_href_attr = raw_href_attr.strip().lower()
 
@@ -495,7 +506,25 @@ async def main():
 
     gc.enable()
     gc_cred = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
-    ws = gc_cred.open_by_url(SHEET_URL).get_worksheet(0)
+    
+    # 🔥 [수집 봇 자동 라우팅 시스템]
+    ws = None
+    KST = timezone(timedelta(hours=9))
+    today_kst = datetime.now(KST).strftime("%Y-%m-%d")
+
+    for idx, url in enumerate(SHEET_URLS):
+        temp_ws = gc_cred.open_by_url(url).get_worksheet(0)
+        dates = temp_ws.col_values(1)
+        
+        # 오늘 날짜가 이미 있거나, 30만 줄 미만이면 해당 시트로 확정
+        if (today_kst in dates) or (len(dates) < ROW_LIMIT):
+            ws = temp_ws
+            print(f"🎯 [수집 봇 자동 라우팅] {idx+1}번 시트에 연결 성공! (현재 {len(dates)}줄 / 최대 {ROW_LIMIT}줄)")
+            break
+            
+    if not ws:
+        print("❌ [비상] 연결할 수 있는 구글 시트가 없습니다. 모든 시트가 꽉 찼습니다.")
+        return
 
     async with async_playwright() as p:
         pc_context_opts = { "viewport": {"width": 1920, "height": 1080}, "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" }
@@ -514,10 +543,8 @@ async def main():
         )
         pc_ctx, mo_ctx = await browser.new_context(**pc_context_opts), await browser.new_context(**mo_context_opts)
 
-        # 🔥 완전히 분리하여 안전하게 선언
         sem = asyncio.Semaphore(5)
         queue = asyncio.Queue()
-        
         uploader = asyncio.create_task(uploader_worker(queue, ws))
 
         tasks = [task_runner(sem, pc_ctx, "PC", t, queue) for t in TARGET_GALLERIES] + \
